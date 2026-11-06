@@ -2,6 +2,7 @@ import { placeholderFor } from '../utils/placeholders.js';
 import { TILE_SIZE, DOOR_W, DOOR_H } from '../config/roomConfig.js';
 import { PLAYER_H } from '../config/playerConfig.js';
 import { ENEMIES } from '../data/enemies.js';
+import { TILE, charToTile } from '../data/tiles.js';
 
 const TILE_DEPTH    = -10;
 const DOOR_DEPTH    = -9;
@@ -35,12 +36,15 @@ export class RoomLoader {
   }
 
   _parseGrid() {
+    // Grid rows are digit strings ('1' solid, '2' one-way, '0' empty).
+    // charToTile also accepts legacy '#'/'='/'.' so pre-migration rooms
+    // in localStorage still load.
     const grid = [];
     for (let row = 0; row < this.data.tilesTall; row++) {
       const line = this.data.grid[row] ?? '';
       const cells = [];
       for (let col = 0; col < this.data.tilesWide; col++) {
-        cells.push(line[col] ?? '.');
+        cells.push(charToTile(line[col] ?? '0'));
       }
       grid.push(cells);
     }
@@ -51,11 +55,11 @@ export class RoomLoader {
     for (let row = 0; row < this.data.tilesTall; row++) {
       for (let col = 0; col < this.data.tilesWide; col++) {
         const cell = this.grid[row][col];
-        if (cell !== '#' && cell !== '=') continue;
+        if (cell !== TILE.SOLID && cell !== TILE.ONEWAY) continue;
         const x = this.offsetX + col * this.tileSize + this.tileSize / 2;
         const y = this.offsetY + row * this.tileSize + this.tileSize / 2;
         let sprite;
-        if (cell === '#') {
+        if (cell === TILE.SOLID) {
           sprite = placeholderFor(this.scene, 'tile.solid', {
             category: 'tile',
             width: this.tileSize,
@@ -101,12 +105,12 @@ export class RoomLoader {
   // --- grid queries ------------------------------------------------------
 
   cellAt(col, row) {
-    if (row < 0 || row >= this.grid.length) return '.';
-    if (col < 0 || col >= this.grid[row].length) return '.';
+    if (row < 0 || row >= this.grid.length) return TILE.EMPTY;
+    if (col < 0 || col >= this.grid[row].length) return TILE.EMPTY;
     return this.grid[row][col];
   }
-  isSolidAt(col, row) { return this.cellAt(col, row) === '#'; }
-  isOneWayAt(col, row) { return this.cellAt(col, row) === '='; }
+  isSolidAt(col, row)  { return this.cellAt(col, row) === TILE.SOLID; }
+  isOneWayAt(col, row) { return this.cellAt(col, row) === TILE.ONEWAY; }
 
   // --- world-space helpers ----------------------------------------------
 

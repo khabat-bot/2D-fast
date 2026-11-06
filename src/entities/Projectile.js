@@ -3,6 +3,7 @@ import {
   ensurePlaceholderTexture,
   CATEGORY_COLORS
 } from '../utils/placeholders.js';
+import { TILE } from '../data/tiles.js';
 
 // Single pooled projectile. The sprite is created once at construction and
 // re-used via the pool: spawn() repositions and shows it, deactivate() hides
@@ -105,7 +106,7 @@ export class Projectile {
       const py = oldY + dy * t;
       const c = Math.floor((px - ox) / ts);
       const r = Math.floor((py - oy) / ts);
-      if (room.cellAt(c, r) === '#') return true;
+      if (room.cellAt(c, r) === TILE.SOLID) return true;
     }
     return false;
   }

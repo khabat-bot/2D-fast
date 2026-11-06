@@ -2,6 +2,7 @@ import { Enemy } from '../Enemy.js';
 import { placeholderFor } from '../../utils/placeholders.js';
 import { ENEMIES } from '../../data/enemies.js';
 import { WALKER_AGGRO, WALKER_CHASE } from '../../config/walkerConfig.js';
+import { TILE } from '../../data/tiles.js';
 
 // Knockback tuning. Horizontal push decays exponentially; vertical pop
 // is a shared jump impulse applied to vy (see onHit).
@@ -150,7 +151,7 @@ export class Walker extends Enemy {
       const py = this.sprite.y + dy * t;
       const c = Math.floor((px - ox) / ts);
       const r = Math.floor((py - oy) / ts);
-      if (room.cellAt(c, r) === '#') return false;
+      if (room.cellAt(c, r) === TILE.SOLID) return false;
     }
     return true;
   }
@@ -202,13 +203,13 @@ export class Walker extends Enemy {
     // Wall directly ahead? Jump.
     let wallAhead = false;
     for (let r = headRow; r <= feetRow; r++) {
-      if (room.cellAt(aheadCol, r) === '#') { wallAhead = true; break; }
+      if (room.cellAt(aheadCol, r) === TILE.SOLID) { wallAhead = true; break; }
     }
     if (wallAhead) { this._doJump(); return; }
 
     // Gap ahead (no floor under the leading tile)? Jump.
     const belowAhead = room.cellAt(aheadCol, belowRow);
-    if (belowAhead !== '#' && belowAhead !== '=') { this._doJump(); return; }
+    if (belowAhead !== TILE.SOLID && belowAhead !== TILE.ONEWAY) { this._doJump(); return; }
   }
 
   _doJump() {
@@ -236,7 +237,7 @@ export class Walker extends Enemy {
     const feetRow  = Math.floor((feetY - oy) / ts);
     for (let c = leftCol; c <= rightCol; c++) {
       const cell = room.cellAt(c, feetRow);
-      if (cell === '#' || cell === '=') return true;
+      if (cell === TILE.SOLID || cell === TILE.ONEWAY) return true;
     }
     return false;
   }
@@ -259,7 +260,7 @@ export class Walker extends Enemy {
     for (let r = oldRow; r <= newRow; r++) {
       for (let c = leftCol; c <= rightCol; c++) {
         const cell = room.cellAt(c, r);
-        if (cell === '#' || cell === '=') {
+        if (cell === TILE.SOLID || cell === TILE.ONEWAY) {
           this.sprite.y = oy + r * ts - this.height / 2;
           this.vy = 0;
           this.onGround = true;
@@ -286,7 +287,7 @@ export class Walker extends Enemy {
 
     for (let r = rowStart; r <= rowEnd; r++) {
       for (let c = leftCol; c <= rightCol; c++) {
-        if (room.cellAt(c, r) !== '#') continue;
+        if (room.cellAt(c, r) !== TILE.SOLID) continue;
         const tileLeftEdge  = ox + c * ts;
         const tileRightEdge = ox + (c + 1) * ts;
         const tileCenterX   = tileLeftEdge + ts / 2;
@@ -326,7 +327,7 @@ export class Walker extends Enemy {
       : Math.floor((leadingEdgeX - ox) / ts) - 1;
 
     const below = room.cellAt(aheadCol, belowRow);
-    if (below !== '#' && below !== '=') {
+    if (below !== TILE.SOLID && below !== TILE.ONEWAY) {
       this.vx = -this.vx;
     }
   }

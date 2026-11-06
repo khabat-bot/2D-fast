@@ -6,14 +6,16 @@
 // areas. Nothing here uses the game's bitmap font.
 
 const TOOL_DEFS = [
-  { id: 'solid',  label: 'SOLID', title: 'Solid wall tile' },
-  { id: 'oneway', label: 'PLAT',  title: 'One-way platform' },
-  { id: 'erase',  label: 'ERASE', title: 'Eraser (clears tile + entity)' },
-  { id: 'player', label: 'SPAWN', title: 'Player spawn' },
-  { id: 'walker', label: 'ENEMY', title: 'Walker spawn' },
-  { id: 'pickup', label: 'PICK',  title: 'Pickup' },
-  { id: 'door',   label: 'DOOR',  title: 'Door' },
-  { id: 'pan',    label: 'PAN',   title: 'Pan view (drag)' }
+  { id: 'solid',       label: 'SOLID',   title: 'Solid wall tile' },
+  { id: 'oneway',      label: 'PLAT',    title: 'One-way platform' },
+  { id: 'erase',       label: 'ERASE',   title: 'Erase tile (keeps entities)' },
+  { id: 'multi-erase', label: 'M-ERASE', title: 'Erase tile + all entities' },
+  { id: 'player',      label: 'SPAWN',   title: 'Player spawn' },
+  { id: 'walker',      label: 'ENEMY',   title: 'Walker (tap again to remove)' },
+  { id: 'pickup',      label: 'PICK',    title: 'Pickup' },
+  { id: 'door',        label: 'DOOR',    title: 'Door' },
+  { id: 'multi-place', label: 'STAMP',   title: 'Multi-place stamp' },
+  { id: 'pan',         label: 'PAN',     title: 'Pan view (drag)' }
 ];
 
 const STYLE = `
@@ -69,15 +71,19 @@ const STYLE = `
   #editor-ui button.ed-btn.back { background: #553333; border-color: #773333; }
   #editor-ui button.ed-btn.danger { background: #772222; border-color: #aa3333; color: #fff; }
   #editor-ui button.ed-btn.active { background: #006644; border-color: #00aa66; color: #fff; }
+  #editor-ui .ed-tools-wrap {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
   #editor-ui .ed-tool {
     appearance: none; -webkit-appearance: none;
     background: #222233; color: #ddd;
     border: 1px solid #444;
     border-radius: 6px;
     font: inherit; font-size: 11px; font-weight: 700;
-    min-height: 38px; min-width: 32px;
-    padding: 2px 1px;
-    flex: 1;
+    min-height: 36px; min-width: 54px;
+    padding: 2px 4px;
+    flex: 1 1 54px;
     letter-spacing: -0.3px;
     line-height: 1.1;
     cursor: pointer;
@@ -252,7 +258,7 @@ export class EditorUI {
           <button class="ed-btn sm" data-action="export">EXP</button>
           <button class="ed-btn play" data-action="play">PLAY</button>
         </div>
-        <div class="ed-bar">
+        <div class="ed-bar ed-tools-wrap">
           ${toolsHtml}
         </div>
         <div class="ed-bar">

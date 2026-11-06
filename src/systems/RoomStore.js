@@ -8,6 +8,7 @@
 //   }
 import { ROOMS } from '../data/rooms.js';
 import { TILE_SIZE } from '../config/roomConfig.js';
+import { TILE, charToTile, tileToChar } from '../data/tiles.js';
 
 const KEY = '2dfast.rooms.v1';
 
@@ -43,14 +44,19 @@ function save(store) {
 // Game:    grid as string[]  (matches rooms.js, compact in storage).
 
 export function toWorking(gameRoom) {
+  // Working grid is number[][] (TILE constants). Accepts digit strings
+  // OR legacy '#'/'='/'.' strings so pre-migration rooms load cleanly.
   return {
     id: gameRoom.id,
     tilesWide: gameRoom.tilesWide,
     tilesTall: gameRoom.tilesTall,
     tileSize: gameRoom.tileSize || TILE_SIZE,
-    grid: (gameRoom.grid || []).map((row) =>
-      typeof row === 'string' ? row.split('') : row.slice()
-    ),
+    grid: (gameRoom.grid || []).map((row) => {
+      if (Array.isArray(row)) return row.slice();
+      const cells = [];
+      for (let i = 0; i < row.length; i++) cells.push(charToTile(row[i]));
+      return cells;
+    }),
     playerSpawn: gameRoom.playerSpawn ? { ...gameRoom.playerSpawn } : null,
     walkers: (gameRoom.walkers || []).map((w) => ({ ...w })),
     pickups: (gameRoom.pickups || []).map((p) => ({ ...p })),
@@ -59,12 +65,13 @@ export function toWorking(gameRoom) {
 }
 
 export function toGame(workingRoom) {
+  // Number grid -> digit strings for storage / rooms.js compatibility.
   return {
     id: workingRoom.id,
     tilesWide: workingRoom.tilesWide,
     tilesTall: workingRoom.tilesTall,
     tileSize: workingRoom.tileSize,
-    grid: workingRoom.grid.map((row) => row.join('')),
+    grid: workingRoom.grid.map((row) => row.map(tileToChar).join('')),
     playerSpawn: workingRoom.playerSpawn ? { ...workingRoom.playerSpawn } : null,
     walkers: (workingRoom.walkers || []).map((w) => ({ ...w })),
     pickups: (workingRoom.pickups || []).map((p) => ({ ...p })),
@@ -127,7 +134,7 @@ export function createBlank(w, h) {
     const row = [];
     for (let c = 0; c < w; c++) {
       const onBorder = r === 0 || r === h - 1 || c === 0 || c === w - 1;
-      row.push(onBorder ? '#' : '.');
+      row.push(onBorder ? TILE.SOLID : TILE.EMPTY);
     }
     grid.push(row);
   }

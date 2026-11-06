@@ -1,6 +1,7 @@
 import { placeholderFor } from '../utils/placeholders.js';
 import { WEAPONS } from '../data/weapons.js';
 import { PICKUP_PHYSICS } from '../config/pickupConfig.js';
+import { TILE } from '../data/tiles.js';
 
 const PICKUP_DEPTH  = 40;
 const PICKUP_RADIUS = 20;
@@ -110,7 +111,7 @@ export class WeaponPickup {
 
     if (this.vx > 0) {
       for (let row = rowStart; row <= rowEnd; row++) {
-        if (room.cellAt(colEnd, row) === '#') {
+        if (room.cellAt(colEnd, row) === TILE.SOLID) {
           this.sprite.x = ox + colEnd * ts - halfW;
           this.vx = -this.vx * PICKUP_PHYSICS.bounce;
           return;
@@ -118,7 +119,7 @@ export class WeaponPickup {
       }
     } else if (this.vx < 0) {
       for (let row = rowStart; row <= rowEnd; row++) {
-        if (room.cellAt(colStart, row) === '#') {
+        if (room.cellAt(colStart, row) === TILE.SOLID) {
           this.sprite.x = ox + (colStart + 1) * ts + halfW;
           this.vx = -this.vx * PICKUP_PHYSICS.bounce;
           return;
@@ -142,7 +143,7 @@ export class WeaponPickup {
 
     if (this.vy > 0) {
       for (let col = colStart; col <= colEnd; col++) {
-        if (room.cellAt(col, rowEnd) === '#') {
+        if (room.cellAt(col, rowEnd) === TILE.SOLID) {
           this.sprite.y = oy + rowEnd * ts - halfH;
           if (this.vy > PICKUP_PHYSICS.restVy) {
             this.vy = -this.vy * PICKUP_PHYSICS.bounce;
@@ -157,7 +158,7 @@ export class WeaponPickup {
       this.onGround = false;
     } else if (this.vy < 0) {
       for (let col = colStart; col <= colEnd; col++) {
-        if (room.cellAt(col, rowStart) === '#') {
+        if (room.cellAt(col, rowStart) === TILE.SOLID) {
           this.sprite.y = oy + (rowStart + 1) * ts + halfH;
           this.vy = -this.vy * PICKUP_PHYSICS.bounce;
           return;

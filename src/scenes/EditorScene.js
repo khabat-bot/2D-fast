@@ -9,6 +9,7 @@ import {
 } from '../config/editorConfig.js';
 import * as RoomStore from '../systems/RoomStore.js';
 import { EditorUI } from '../ui/EditorUI.js';
+import { TILE } from '../data/tiles.js';
 import { WEAPONS } from '../data/weapons.js';
 
 const VIEW_W = 390;
@@ -31,6 +32,7 @@ export class EditorScene extends Phaser.Scene {
     this.roomRT = null;
     this.viewportTop = 0;
     this.viewportH = VIEW_H;
+    this.multiPlaceConfig = null;
   }
 
   create() {
@@ -233,12 +235,12 @@ export class EditorScene extends Phaser.Scene {
       newGrid.push(row);
     }
     for (let c = 0; c < newW; c++) {
-      newGrid[0][c] = '#';
-      newGrid[newH - 1][c] = '#';
+      newGrid[0][c] = TILE.SOLID;
+      newGrid[newH - 1][c] = TILE.SOLID;
     }
     for (let r = 0; r < newH; r++) {
-      newGrid[r][0] = '#';
-      newGrid[r][newW - 1] = '#';
+      newGrid[r][0] = TILE.SOLID;
+      newGrid[r][newW - 1] = TILE.SOLID;
     }
     this.roomData.tilesWide = newW;
     this.roomData.tilesTall = newH;
@@ -338,6 +340,7 @@ export class EditorScene extends Phaser.Scene {
     const working = RoomStore.getWorkingById(id);
     if (!working) { this.ui.showToast('ROOM NOT FOUND', true); return; }
     this.roomData = working;
+    this.multiPlaceConfig = null;
     RoomStore.setLastId(id);
     this.ui.setState({
       roomName: this.roomData.id,
@@ -546,36 +549,208 @@ export class EditorScene extends Phaser.Scene {
 
     const tool = this.tool;
     if (tool === 'solid' || tool === 'oneway' || tool === 'erase') {
-      const val = tool === 'solid' ? '#' : (tool === 'oneway' ? '=' : '.');
+      const val = tool === 'solid' ? TILE.SOLID
+                : tool === 'oneway' ? TILE.ONEWAY
+                : TILE.EMPTY;
       if (this.roomData.grid[row][col] === val) return;
       this.roomData.grid[row][col] = val;
-      if (val === '.') {
-        this.roomData.walkers = (this.roomData.walkers || []).filter(
-          (w) => !(w.col === col && w.row === row));
-        this.roomData.pickups = (this.roomData.pickups || []).filter(
-          (p) => !(p.col === col && p.row === row));
-        this.roomData.doors = (this.roomData.doors || []).filter(
-          (d) => !(d.col === col && d.row === row));
-      }
+      // Erase (tile only) deliberately does NOT touch entities. Doors,
+      // walkers and pickups have their own tools for removal.
       this.gridDirty = true;
       this.scheduleSave();
+    } else if (tool === 'multi-erase') {
+      this._applyMultiErase(col, row);
     } else if (tool === 'player') {
       this.roomData.playerSpawn = { col, row };
       this.gridDirty = true;
       this.scheduleSave();
     } else if (tool === 'walker') {
+      const idx = (this.roomData.walkers || []).findIndex(
+        (w) => w.col === col && w.row === row);
+      if (idx >= 0) {
+        this.roomData.walkers.splice(idx, 1);
+        this.ui.showToast('WALKER REMOVED');
+      } else {
+        this.roomData.walkers = this.roomData.walkers || [];
+        this.roomData.walkers.push({ col, row });
+      }
+      this.gridDirty = true;
+      this.scheduleSave();
+    } else if (tool === 'pickup') {
+      this._openPickupModal(col, row);
+    } else if (tool === 'door') {
+      this._openDoorModal(col, row);
+    } else if (tool === 'multi-place') {
+      if (!this.multiPlaceConfig) {
+        this._openMultiPlaceModal(col, row);
+      } else {
+        this._applyMultiPlace(col, row);
+        this.gridDirty = true;
+        this.scheduleSave();
+      }
+    }
+  }
+
+  _applyMultiErase(col, row) {
+    let changed = false;
+    if (this.roomData.grid[row][col] !== TILE.EMPTY) {
+      this.roomData.grid[row][col] = TILE.EMPTY;
+      changed = true;
+    }
+    const wBefore = (this.roomData.walkers || []).length;
+    this.roomData.walkers = (this.roomData.walkers || []).filter(
+      (w) => !(w.col === col && w.row === row));
+    if (this.roomData.walkers.length !== wBefore) changed = true;
+    const pBefore = (this.roomData.pickups || []).length;
+    this.roomData.pickups = (this.roomData.pickups || []).filter(
+      (p) => !(p.col === col && p.row === row));
+    if (this.roomData.pickups.length !== pBefore) changed = true;
+    const dBefore = (this.roomData.doors || []).length;
+    this.roomData.doors = (this.roomData.doors || []).filter(
+      (d) => !(d.col === col && d.row === row));
+    if (this.roomData.doors.length !== dBefore) changed = true;
+    if (changed) {
+      this.gridDirty = true;
+      this.scheduleSave();
+    }
+  }
+
+  _applyMultiPlace(col, row) {
+    const cfg = this.multiPlaceConfig;
+    if (!cfg) return;
+    if (cfg.tile === 'solid')       this.roomData.grid[row][col] = TILE.SOLID;
+    else if (cfg.tile === 'oneway') this.roomData.grid[row][col] = TILE.ONEWAY;
+    if (cfg.playerSpawn) this.roomData.playerSpawn = { col, row };
+    if (cfg.walker) {
       const exists = (this.roomData.walkers || []).some(
         (w) => w.col === col && w.row === row);
       if (!exists) {
         this.roomData.walkers = this.roomData.walkers || [];
         this.roomData.walkers.push({ col, row });
+      }
+    }
+    if (cfg.pickup) {
+      this.roomData.pickups = (this.roomData.pickups || []).filter(
+        (p) => !(p.col === col && p.row === row));
+      const entry = { col, row, kind: cfg.pickup.kind };
+      if (cfg.pickup.kind === 'weapon') entry.weaponId = cfg.pickup.weaponId;
+      this.roomData.pickups.push(entry);
+    }
+    if (cfg.door) {
+      this.roomData.doors = (this.roomData.doors || []).filter(
+        (d) => !(d.col === col && d.row === row));
+      const door = { col, row, side: cfg.door.side, to: cfg.door.to };
+      if (cfg.door.entry) door.entry = cfg.door.entry;
+      this.roomData.doors.push(door);
+    }
+  }
+
+  _openMultiPlaceModal(firstCol, firstRow) {
+    this.activePointerId = null;
+    this.dragMode = null;
+    const cfg = this.multiPlaceConfig || {
+      tile: 'none', playerSpawn: false, walker: false, pickup: null, door: null
+    };
+    const weapons = Object.values(WEAPONS);
+    const weaponOpts = weapons.map((w) =>
+      `<option value="${w.id}">${w.name}</option>`).join('');
+    const allRooms = RoomStore.listBuiltins().concat(RoomStore.listUserRooms());
+    const roomOpts = allRooms.map((r) =>
+      `<option value="${r.id}">${r.id}</option>`).join('');
+
+    const body = `
+      <div class="ed-form">
+        <label>Tile
+          <select id="mp-tile">
+            <option value="none"${cfg.tile === 'none' ? ' selected' : ''}>None (leave tile)</option>
+            <option value="solid"${cfg.tile === 'solid' ? ' selected' : ''}>Solid</option>
+            <option value="oneway"${cfg.tile === 'oneway' ? ' selected' : ''}>One-way</option>
+          </select>
+        </label>
+        <label><input type="checkbox" id="mp-player"${cfg.playerSpawn ? ' checked' : ''}> Player spawn</label>
+        <label><input type="checkbox" id="mp-walker"${cfg.walker ? ' checked' : ''}> Walker</label>
+        <label><input type="checkbox" id="mp-pickup"${cfg.pickup ? ' checked' : ''}> Pickup</label>
+        <div id="mp-pickup-sub" style="padding-left:24px;display:${cfg.pickup ? '' : 'none'}">
+          <label>Kind
+            <select id="mp-pick-kind">
+              <option value="weapon"${cfg.pickup && cfg.pickup.kind === 'weapon' ? ' selected' : ''}>Weapon</option>
+              <option value="ammo"${cfg.pickup && cfg.pickup.kind === 'ammo' ? ' selected' : ''}>Ammo</option>
+            </select>
+          </label>
+          <label id="mp-pick-weapon-row">Weapon
+            <select id="mp-pick-weapon">${weaponOpts}</select>
+          </label>
+        </div>
+        <label><input type="checkbox" id="mp-door"${cfg.door ? ' checked' : ''}> Door</label>
+        <div id="mp-door-sub" style="padding-left:24px;display:${cfg.door ? '' : 'none'}">
+          <label>To room
+            <select id="mp-door-to">${roomOpts}</select>
+          </label>
+          <label>Side
+            <select id="mp-door-side">
+              <option value="right">Right</option>
+              <option value="left">Left</option>
+            </select>
+          </label>
+        </div>
+      </div>
+    `;
+
+    const buttons = [
+      { label: 'CANCEL', onClick: () => this.ui.hideModal() },
+      { label: 'APPLY', primary: true, onClick: (el) => {
+        const tile = el.querySelector('#mp-tile').value;
+        const playerSpawn = el.querySelector('#mp-player').checked;
+        const walker = el.querySelector('#mp-walker').checked;
+        const pickupChecked = el.querySelector('#mp-pickup').checked;
+        const doorChecked = el.querySelector('#mp-door').checked;
+        let pickup = null;
+        if (pickupChecked) {
+          pickup = {
+            kind: el.querySelector('#mp-pick-kind').value,
+            weaponId: el.querySelector('#mp-pick-weapon').value
+          };
+        }
+        let door = null;
+        if (doorChecked) {
+          door = {
+            to: el.querySelector('#mp-door-to').value,
+            side: el.querySelector('#mp-door-side').value
+          };
+        }
+        this.multiPlaceConfig = { tile, playerSpawn, walker, pickup, door };
+        this._applyMultiPlace(firstCol, firstRow);
         this.gridDirty = true;
         this.scheduleSave();
-      }
-    } else if (tool === 'pickup') {
-      this._openPickupModal(col, row);
-    } else if (tool === 'door') {
-      this._openDoorModal(col, row);
+        this.ui.hideModal();
+        this.ui.showToast('STAMP READY - tap to place');
+      }}
+    ];
+
+    this.ui.showModal({ title: 'MULTI-PLACE STAMP', bodyHtml: body, buttons });
+
+    const pickCb = this.ui.modalEl.querySelector('#mp-pickup');
+    const pickSub = this.ui.modalEl.querySelector('#mp-pickup-sub');
+    if (pickCb && pickSub) {
+      pickCb.addEventListener('change', () => {
+        pickSub.style.display = pickCb.checked ? '' : 'none';
+      });
+    }
+    const doorCb = this.ui.modalEl.querySelector('#mp-door');
+    const doorSub = this.ui.modalEl.querySelector('#mp-door-sub');
+    if (doorCb && doorSub) {
+      doorCb.addEventListener('change', () => {
+        doorSub.style.display = doorCb.checked ? '' : 'none';
+      });
+    }
+    const pickKindSel = this.ui.modalEl.querySelector('#mp-pick-kind');
+    const pickWeaponRow = this.ui.modalEl.querySelector('#mp-pick-weapon-row');
+    if (pickKindSel && pickWeaponRow) {
+      const syncVis = () => {
+        pickWeaponRow.style.display = pickKindSel.value === 'weapon' ? '' : 'none';
+      };
+      pickKindSel.addEventListener('change', syncVis);
+      syncVis();
     }
   }
 
@@ -707,12 +882,12 @@ export class EditorScene extends Phaser.Scene {
     const W = this.roomData.tilesWide;
     const H = this.roomData.tilesTall;
     for (let c = 0; c < W; c++) {
-      if (this.roomData.grid[0][c] !== '#') return false;
-      if (this.roomData.grid[H - 1][c] !== '#') return false;
+      if (this.roomData.grid[0][c] !== TILE.SOLID) return false;
+      if (this.roomData.grid[H - 1][c] !== TILE.SOLID) return false;
     }
     for (let r = 0; r < H; r++) {
-      if (this.roomData.grid[r][0] !== '#') return false;
-      if (this.roomData.grid[r][W - 1] !== '#') return false;
+      if (this.roomData.grid[r][0] !== TILE.SOLID) return false;
+      if (this.roomData.grid[r][W - 1] !== TILE.SOLID) return false;
     }
     return true;
   }
@@ -740,7 +915,7 @@ export class EditorScene extends Phaser.Scene {
     g.fillStyle(COLOR_SOLID_TILE, 1);
     for (let r = 0; r < H; r++) {
       for (let c = 0; c < W; c++) {
-        if (this.roomData.grid[r][c] === '#') {
+        if (this.roomData.grid[r][c] === TILE.SOLID) {
           g.fillRect(c * ts, r * ts, ts, ts);
         }
       }
@@ -749,7 +924,7 @@ export class EditorScene extends Phaser.Scene {
     g.fillStyle(COLOR_ONEWAY_TILE, 1);
     for (let r = 0; r < H; r++) {
       for (let c = 0; c < W; c++) {
-        if (this.roomData.grid[r][c] === '=') {
+        if (this.roomData.grid[r][c] === TILE.ONEWAY) {
           g.fillRect(c * ts, r * ts, ts, ts);
         }
       }
