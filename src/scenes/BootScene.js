@@ -27,7 +27,7 @@ export class BootScene extends Phaser.Scene {
 
     const playZone = this.add.zone(width / 2, height / 2, width, height)
       .setInteractive().setDepth(0);
-    playZone.on('pointerdown', () => this.scene.start('GameScene'));
+    playZone.on('pointerdown', () => this.scene.start('MenuScene'));
 
     const settingsZone = this.add.zone(width - 42, height - 14, 100, 34)
       .setInteractive().setDepth(10);

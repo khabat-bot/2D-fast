@@ -1,15 +1,22 @@
 import { placeholderFor } from '../utils/placeholders.js';
-import { TILE_SIZE } from '../config/roomConfig.js';
+import { TILE_SIZE, DOOR_W, DOOR_H } from '../config/roomConfig.js';
+import { PLAYER_H } from '../config/playerConfig.js';
+import { ENEMIES } from '../data/enemies.js';
 
-// Tiles behind everything else so entities and pickups render on top.
-const TILE_DEPTH = -10;
-// Distinct brown so one-way platforms are visually separable from solid
-// walls at a glance.
+const TILE_DEPTH    = -10;
+const DOOR_DEPTH    = -9;
 const ONE_WAY_COLOR = 0x8b6f47;
+const DOOR_COLOR    = 0x00cc66;   // green, distinct from red enemies / blue player
+const PICKUP_HALF_H = 8;          // assumed half-height when placing pickups on a tile row
 
-// Parses one room template from src/data/rooms.js, draws its tiles, and
-// exposes collision queries, spawn positions, and bounds. Rooms are
-// centered in the viewport so odd tile counts stay integer-aligned.
+// Loads one room: parses the grid, draws tiles and doors, exposes collision
+// queries, spawn positions, and door spawns. Doors are the only transition
+// mechanism - player overlap triggers a room swap.
+//
+// Spawn positions in `roomData` use TILE coords:
+//   { col, row } -> entity is centered on col, bottom edge on top of row.
+// The loader converts to world pixel coords using each entity's own height,
+// so changing entity sizes or tile layout never breaks spawns.
 export class RoomLoader {
   constructor(scene, roomData) {
     this.scene = scene;
@@ -20,7 +27,11 @@ export class RoomLoader {
     this.offsetX = Math.floor((scene.scale.width  - roomW) / 2);
     this.offsetY = Math.floor((scene.scale.height - roomH) / 2);
     this.grid = this._parseGrid();
+    this._tileSprites = [];
+    this._doorSprites = [];
+    this._doorTweens  = [];
     this._createTiles();
+    this._createDoors();
   }
 
   _parseGrid() {
@@ -43,15 +54,16 @@ export class RoomLoader {
         if (cell !== '#' && cell !== '=') continue;
         const x = this.offsetX + col * this.tileSize + this.tileSize / 2;
         const y = this.offsetY + row * this.tileSize + this.tileSize / 2;
+        let sprite;
         if (cell === '#') {
-          placeholderFor(this.scene, 'tile.solid', {
+          sprite = placeholderFor(this.scene, 'tile.solid', {
             category: 'tile',
             width: this.tileSize,
             height: this.tileSize,
             x, y
           }).setDepth(TILE_DEPTH);
         } else {
-          placeholderFor(this.scene, 'tile.oneway', {
+          sprite = placeholderFor(this.scene, 'tile.oneway', {
             category: 'tile',
             width: this.tileSize,
             height: this.tileSize,
@@ -59,22 +71,44 @@ export class RoomLoader {
             color: ONE_WAY_COLOR
           }).setDepth(TILE_DEPTH);
         }
+        this._tileSprites.push(sprite);
       }
     }
   }
 
-  // --- grid queries (tile coords) ----------------------------------------
+  _createDoors() {
+    for (const d of (this.data.doors ?? [])) {
+      const x = this.offsetX + d.col * this.tileSize + this.tileSize / 2;
+      const y = this.offsetY + d.row * this.tileSize - DOOR_H / 2;
+      const sprite = this.scene.add
+        .rectangle(x, y, DOOR_W, DOOR_H, DOOR_COLOR, 0.7)
+        .setStrokeStyle(2, 0x00ff88, 1)
+        .setDepth(DOOR_DEPTH);
+      this._doorSprites.push(sprite);
+      // Pulse so the door is obvious even on a busy screen.
+      const t = this.scene.tweens.add({
+        targets: sprite,
+        alpha: 0.35,
+        duration: 700,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut'
+      });
+      this._doorTweens.push(t);
+    }
+  }
+
+  // --- grid queries ------------------------------------------------------
 
   cellAt(col, row) {
     if (row < 0 || row >= this.grid.length) return '.';
     if (col < 0 || col >= this.grid[row].length) return '.';
     return this.grid[row][col];
   }
-
   isSolidAt(col, row) { return this.cellAt(col, row) === '#'; }
   isOneWayAt(col, row) { return this.cellAt(col, row) === '='; }
 
-  // --- world-space helpers ------------------------------------------------
+  // --- world-space helpers ----------------------------------------------
 
   getBounds() {
     return {
@@ -85,50 +119,68 @@ export class RoomLoader {
     };
   }
 
-  // Top of the bottom-most row, assumed solid. Used for pickups and
-  // walkers, which do not do tile collision yet.
   getFloorY() {
     return this.offsetY + (this.data.tilesTall - 1) * this.tileSize;
   }
 
-  // Feet position in world coords. Caller converts to sprite-center Y by
-  // subtracting PLAYER_H / 2.
+  // Returns { x, y } where y is the BOTTOM edge (player sprite y = this - PLAYER_H/2).
   getPlayerSpawn() {
+    const s = this.data.playerSpawn;
     return {
-      x: this.offsetX + this.data.playerSpawn.x,
-      y: this.offsetY + this.data.playerSpawn.y
+      x: this.offsetX + s.col * this.tileSize + this.tileSize / 2,
+      y: this.offsetY + s.row * this.tileSize
     };
   }
 
-  // Sprite-center positions in world coords.
+  // Returns { x, y } where y is the SPRITE CENTER (walker uses it as restY).
   getWalkerSpawns() {
-    return (this.data.walkerSpawns ?? []).map((s) => ({
-      x: this.offsetX + s.x,
-      y: this.offsetY + s.y
+    const walkerH = ENEMIES.walker.height;
+    return (this.data.walkers ?? []).map((w) => ({
+      x: this.offsetX + w.col * this.tileSize + this.tileSize / 2,
+      y: this.offsetY + w.row * this.tileSize - walkerH / 2
     }));
   }
 
-  // Pickup spawns in world coords. Each entry has {type, weaponId?,
-  // x, y}. The caller (GameScene) instantiates WeaponPickup or
-  // AmmoPickup based on `type`. Pickup positions were previously
-  // hardcoded in GameScene, which did not scale to multiple rooms.
+  // Returns { kind, weaponId, x, y } where y is the SPRITE CENTER.
   getPickupSpawns() {
-    return (this.data.pickupSpawns ?? []).map((s) => ({
-      type: s.type,
-      weaponId: s.weaponId,
-      x: this.offsetX + s.x,
-      y: this.offsetY + s.y
+    return (this.data.pickups ?? []).map((p) => ({
+      kind: p.kind,
+      weaponId: p.weaponId,
+      x: this.offsetX + p.col * this.tileSize + this.tileSize / 2,
+      y: this.offsetY + p.row * this.tileSize - PICKUP_HALF_H
     }));
   }
 
-  // Left/right bounds for walker patrol. Walker update checks
-  // sprite.x - halfW < minX, so these are edge positions (inside the outer
-  // walls by one tile).
+  // Door spawns in WORLD coords for overlap checks. `entry` is passed
+  // through untouched - it is resolved against the DESTINATION room's
+  // doors/playerSpawn by GameScene.handleRoomTransition.
+  getDoorSpawns() {
+    return (this.data.doors ?? []).map((d) => ({
+      x: this.offsetX + d.col * this.tileSize + this.tileSize / 2,
+      y: this.offsetY + d.row * this.tileSize - DOOR_H / 2,
+      w: DOOR_W,
+      h: DOOR_H,
+      to: d.to,
+      entry: d.entry ?? null
+    }));
+  }
+
   getWalkerBounds() {
     const b = this.getBounds();
     return {
       minX: b.x + this.tileSize,
       maxX: b.x + b.w - this.tileSize
     };
+  }
+
+  destroy() {
+    for (const s of this._tileSprites) s.destroy();
+    this._tileSprites = [];
+    for (const s of this._doorSprites) s.destroy();
+    this._doorSprites = [];
+    for (const t of this._doorTweens) {
+      if (t && typeof t.remove === 'function') t.remove();
+    }
+    this._doorTweens = [];
   }
 }

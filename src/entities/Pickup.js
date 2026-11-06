@@ -69,7 +69,12 @@ export class WeaponPickup {
     this.glowFx = makeGlow(this.sprite);
   }
 
-  update(dt, groundY, minX, maxX) {
+  // Tile-based physics. After each axis move, walk the tiles the AABB
+  // overlaps and reflect/stop on any solid '#' tile. One-way '=' tiles
+  // are ignored (they look like thin ledges, not surfaces that catch
+  // items mid-air). Interior walls and floor blocks collide, not just
+  // the room border.
+  update(dt, room) {
     if (this.collected) return;
 
     const P = PICKUP_PHYSICS;
@@ -79,28 +84,85 @@ export class WeaponPickup {
     if (!this.onGround) this.vy += P.gravity * dt;
 
     this.sprite.x += this.vx * dt;
-    this.sprite.y += this.vy * dt;
+    this._resolveX(room, halfW, halfH);
 
-    if (this.sprite.y + halfH >= groundY) {
-      this.sprite.y = groundY - halfH;
-      if (this.vy > P.restVy) {
-        this.vy = -this.vy * P.bounce;
-      } else {
-        this.vy = 0;
-        this.onGround = true;
-      }
+    this.sprite.y += this.vy * dt;
+    this._resolveY(room, halfW, halfH);
+
+    if (this.onGround) {
       this.vx *= Math.pow(P.groundFrictionPerFrame, dt * 60);
       if (Math.abs(this.vx) < P.restVx) this.vx = 0;
-    } else if (this.sprite.y + halfH < groundY - 0.5) {
-      this.onGround = false;
     }
+  }
 
-    if (this.sprite.x - halfW < minX) {
-      this.sprite.x = minX + halfW;
-      this.vx = -this.vx * P.bounce;
-    } else if (this.sprite.x + halfW > maxX) {
-      this.sprite.x = maxX - halfW;
-      this.vx = -this.vx * P.bounce;
+  _resolveX(room, halfW, halfH) {
+    const ts = room.tileSize;
+    const ox = room.offsetX;
+    const oy = room.offsetY;
+    const left  = this.sprite.x - halfW;
+    const right = this.sprite.x + halfW;
+    const top   = this.sprite.y - halfH;
+    const bot   = this.sprite.y + halfH;
+    const colStart = Math.floor((left  - ox) / ts);
+    const colEnd   = Math.floor((right - ox - 0.001) / ts);
+    const rowStart = Math.floor((top   - oy) / ts);
+    const rowEnd   = Math.floor((bot   - oy - 0.001) / ts);
+
+    if (this.vx > 0) {
+      for (let row = rowStart; row <= rowEnd; row++) {
+        if (room.cellAt(colEnd, row) === '#') {
+          this.sprite.x = ox + colEnd * ts - halfW;
+          this.vx = -this.vx * PICKUP_PHYSICS.bounce;
+          return;
+        }
+      }
+    } else if (this.vx < 0) {
+      for (let row = rowStart; row <= rowEnd; row++) {
+        if (room.cellAt(colStart, row) === '#') {
+          this.sprite.x = ox + (colStart + 1) * ts + halfW;
+          this.vx = -this.vx * PICKUP_PHYSICS.bounce;
+          return;
+        }
+      }
+    }
+  }
+
+  _resolveY(room, halfW, halfH) {
+    const ts = room.tileSize;
+    const ox = room.offsetX;
+    const oy = room.offsetY;
+    const left  = this.sprite.x - halfW;
+    const right = this.sprite.x + halfW;
+    const top   = this.sprite.y - halfH;
+    const bot   = this.sprite.y + halfH;
+    const colStart = Math.floor((left  - ox) / ts);
+    const colEnd   = Math.floor((right - ox - 0.001) / ts);
+    const rowStart = Math.floor((top   - oy) / ts);
+    const rowEnd   = Math.floor((bot   - oy - 0.001) / ts);
+
+    if (this.vy > 0) {
+      for (let col = colStart; col <= colEnd; col++) {
+        if (room.cellAt(col, rowEnd) === '#') {
+          this.sprite.y = oy + rowEnd * ts - halfH;
+          if (this.vy > PICKUP_PHYSICS.restVy) {
+            this.vy = -this.vy * PICKUP_PHYSICS.bounce;
+            this.onGround = false;
+          } else {
+            this.vy = 0;
+            this.onGround = true;
+          }
+          return;
+        }
+      }
+      this.onGround = false;
+    } else if (this.vy < 0) {
+      for (let col = colStart; col <= colEnd; col++) {
+        if (room.cellAt(col, rowStart) === '#') {
+          this.sprite.y = oy + (rowStart + 1) * ts + halfH;
+          this.vy = -this.vy * PICKUP_PHYSICS.bounce;
+          return;
+        }
+      }
     }
   }
 
@@ -147,7 +209,7 @@ export class AmmoPickup {
     this.glowFx = makeGlow(this.sprite);
   }
 
-  update(_dt, _groundY, _minX, _maxX) { /* static */ }
+  update(_dt, _room) { /* static */ }
 
   setInRange(inRange, nowMs) {
     if (!this.glowFx) return;

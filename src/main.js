@@ -4,6 +4,8 @@ import { BootScene } from './scenes/BootScene.js';
 import { GameScene } from './scenes/GameScene.js';
 import { SettingsScene } from './scenes/SettingsScene.js';
 import { GameOverScene } from './scenes/GameOverScene.js';
+import { MenuScene } from './scenes/MenuScene.js';
+import { EditorScene } from './scenes/EditorScene.js';
 import { initDebugOverlay } from './utils/debug.js';
 
 const config = {
@@ -33,7 +35,7 @@ const config = {
     activePointers: 4
   },
 
-  scene: [BootScene, GameScene, SettingsScene, GameOverScene]
+  scene: [BootScene, MenuScene, EditorScene, GameScene, SettingsScene, GameOverScene]
 };
 
 const game = new Phaser.Game(config);

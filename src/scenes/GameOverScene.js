@@ -11,7 +11,7 @@ function fmtTime(ms) {
 
 // Run-over screen. Receives { stats } from GameScene via init(data).
 // Stats shown: survived, kills, damage dealt, damage taken.
-// RETRY restarts GameScene; MENU returns to BootScene.
+// RETRY restarts GameScene; MENU returns to MenuScene.
 //
 // Rooms-cleared and deaths are NOT shown: solo runs have exactly one
 // death and there are no rooms yet. Tracking object in GameScene has
@@ -58,7 +58,7 @@ export class GameOverScene extends Phaser.Scene {
       () => this.goto('GameScene'));
     this.makeButton(290, 145, 120, 24, 'MENU',
       { fill: 0x222222, stroke: 0x666666, pressed: 0x555555 },
-      () => this.goto('BootScene'));
+      () => this.goto('MenuScene'));
   }
 
   makeButton(x, y, w, h, label, colors, onClick) {

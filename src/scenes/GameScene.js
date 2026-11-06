@@ -13,7 +13,7 @@ import { pixelText } from '../utils/text.js';
 import { STARTING_WEAPONS } from '../data/weapons.js';
 import { Walker } from '../entities/enemies/Walker.js';
 import { RoomLoader } from '../world/RoomLoader.js';
-import { ROOMS } from '../data/rooms.js';
+import { ROOMS, DEFAULT_ROOM } from '../data/rooms.js';
 import {
   JOYSTICK_RADIUS, JOYSTICK_STICK_RADIUS, JOYSTICK_DEADZONE,
   JOYSTICK_ZONE_WIDTH_FRAC, JOYSTICK_ZONE_Y_START_FRAC,
@@ -25,10 +25,10 @@ import {
   DROP_BUTTON_COLOR
 } from '../config/controlsConfig.js';
 import { PLAYER_W, PLAYER_H } from '../config/playerConfig.js';
+import { DOOR_W } from '../config/roomConfig.js';
 import { PICKUP_COLLECT_DISTANCE, PICKUP_PHYSICS } from '../config/pickupConfig.js';
 import {
-  CAMERA_LERP, CAMERA_DEADZONE_W, CAMERA_DEADZONE_H,
-  CAMERA_LOOKAHEAD, CAMERA_LOOKAHEAD_LERP
+  CAMERA_LERP, CAMERA_LOOKAHEAD, CAMERA_LOOKAHEAD_LERP
 } from '../config/cameraConfig.js';
 
 const AIM_LINE_LENGTH   = 40;
@@ -88,6 +88,14 @@ export class GameScene extends Phaser.Scene {
     this.lastFireAtMs = -10000;
     this.activeMeleeArcs = [];
     this.facing = 1;
+    this.currentRoomId = null;
+    this.transitioningRoom = false;
+    this.roomDoors = [];
+    this.roomTransitionCooldownUntil = 0;
+  }
+
+  init(data) {
+    this._overrideRoom = (data && data.room) ? data.room : null;
   }
 
   create() {
@@ -108,8 +116,12 @@ export class GameScene extends Phaser.Scene {
 
     const { width, height } = this.scale;
 
-    // Load the room. Single room for now; multi-room comes later.
-    this.room = new RoomLoader(this, ROOMS.test_room);
+    // Load the room. If a runtime room was supplied via init(data)
+    // (editor's PLAY button), use that instead of the default.
+    const roomData = this._overrideRoom ?? ROOMS[DEFAULT_ROOM];
+    this.currentRoomId = roomData.id ?? 'editor_room';
+    this.room = new RoomLoader(this, roomData);
+    this.roomDoors = this.room.getDoorSpawns();
     this.roomFloorY = this.room.getFloorY();
     const spawn = this.room.getPlayerSpawn();
     this.player = new Player(this, {
@@ -122,19 +134,18 @@ export class GameScene extends Phaser.Scene {
     this.createHpBar();
 
     this.enemies = [];
-    const walkerBounds = this.room.getWalkerBounds();
     for (const ws of this.room.getWalkerSpawns()) {
-      this.enemies.push(new Walker(this, ws.x, ws.y, walkerBounds));
+      this.enemies.push(new Walker(this, ws.x, ws.y, this.room));
     }
 
     this.weaponPickups = [];
     this.ammoPickups = [];
     for (const ps of this.room.getPickupSpawns()) {
-      if (ps.type === 'weapon') {
+      if (ps.kind === 'weapon') {
         this.weaponPickups.push(
           new WeaponPickup(this, ps.x, ps.y, ps.weaponId)
         );
-      } else if (ps.type === 'ammo') {
+      } else if (ps.kind === 'ammo') {
         this.ammoPickups.push(new AmmoPickup(this, ps.x, ps.y));
       }
     }
@@ -229,11 +240,16 @@ export class GameScene extends Phaser.Scene {
       const px = this.player.sprite.x;
       const py = this.player.sprite.y;
       const maxDist = PICKUP_COLLECT_DISTANCE;
+      // pointer.x/y are SCREEN coords; pickup sprites are WORLD.
+      // Convert so the tap hit test still works after the camera pans.
+      const cam = this.cameras.main;
+      const wpx = pointer.x + cam.scrollX;
+      const wpy = pointer.y + cam.scrollY;
 
       for (let i = this.weaponPickups.length - 1; i >= 0; i--) {
         const p = this.weaponPickups[i];
         if (p.collected || now < p.collectableAt) continue;
-        if (!p.contains(pointer.x, pointer.y)) continue;
+        if (!p.contains(wpx, wpy)) continue;
         if (aabbGap(px, py, PLAYER_W, PLAYER_H,
                     p.sprite.x, p.sprite.y, p.width, p.height) > maxDist) continue;
         const result = this.weapon.addWeapon(p.weaponId, p.ammo);
@@ -246,7 +262,12 @@ export class GameScene extends Phaser.Scene {
           // direction. Previously it spawned at the pickup's world
           // position with a random kick, which looked like a
           // teleport. This matches the drop button's behaviour.
-          const swappedAim = this.aim.getAim(px, py);
+          // getAim expects SCREEN coords (see update()). Convert
+          // px/py so TAP-mode swap-drop direction is correct after
+          // any camera pan.
+          const pxs = px - cam.scrollX;
+          const pys = py - cam.scrollY;
+          const swappedAim = this.aim.getAim(pxs, pys);
           this.spawnDroppedWeapon(result.dropped, px, py,
             { x: swappedAim.x, y: swappedAim.y });
         }
@@ -256,7 +277,7 @@ export class GameScene extends Phaser.Scene {
       for (let i = this.ammoPickups.length - 1; i >= 0; i--) {
         const p = this.ammoPickups[i];
         if (p.collected || now < p.collectableAt) continue;
-        if (!p.contains(pointer.x, pointer.y)) continue;
+        if (!p.contains(wpx, wpy)) continue;
         if (aabbGap(px, py, PLAYER_W, PLAYER_H,
                     p.sprite.x, p.sprite.y, p.width, p.height) > maxDist) continue;
         const used = this.weapon.refillAllRangedAmmo();
@@ -276,16 +297,26 @@ export class GameScene extends Phaser.Scene {
     if (!dropped) return;
     const px = this.player.sprite.x;
     const py = this.player.sprite.y;
-    const aim = this.aim.getAim(px, py);
+    // getAim expects SCREEN coords (see update()). Convert so the throw
+    // direction is correct in tapToShoot mode after any camera scroll.
+    const cam = this.cameras.main;
+    const pxs = px - cam.scrollX;
+    const pys = py - cam.scrollY;
+    const aim = this.aim.getAim(pxs, pys);
     this.spawnDroppedWeapon(dropped, px, py, { x: aim.x, y: aim.y });
     this.refreshSlotUI();
   }
 
   spawnDroppedWeapon(dropped, x, y, dir = null) {
-    const zoneMinX = this.scale.width * JOYSTICK_ZONE_WIDTH_FRAC + 15;
-    const dropX = Phaser.Math.Clamp(x, zoneMinX, this.scale.width - 20);
+    // Clamp to ROOM bounds, not SCREEN bounds. x/y here are WORLD coords
+    // (player world position). The old code clamped against this.scale.width
+    // which is the viewport, so when the camera was pinned at a room edge
+    // the weapon landed tens-to-hundreds of px away from the player.
+    const b = this.room.getBounds();
+    const margin = 20;
+    const dropX = Phaser.Math.Clamp(x, b.x + margin, b.x + b.w - margin);
     const dropY = (y !== undefined)
-      ? Phaser.Math.Clamp(y, 10, this.roomFloorY - WEAPON_PICKUP_SIZE / 2)
+      ? Phaser.Math.Clamp(y, b.y + 10, this.roomFloorY - WEAPON_PICKUP_SIZE / 2)
       : (this.roomFloorY - WEAPON_PICKUP_SIZE / 2);
     const pickup = new WeaponPickup(
       this, dropX, dropY,
@@ -422,6 +453,25 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    // Room exit detection: if the player has walked past the exit edge
+    // and the current room declares an exit in that direction, swap
+    // rooms. The transition tears down all rooms-specific state and
+    // rebuilds it for the next room. Player state (weapons, ammo, HP)
+    // is preserved.
+    // Door overlap -> room transition. Doors are the only exit
+    // mechanism. Cooldown prevents immediate re-trigger after
+    // entering a room through a door on the destination side.
+    if (!this.transitioningRoom &&
+        this.time.now >= this.roomTransitionCooldownUntil) {
+      for (const d of this.roomDoors) {
+        if (aabbOverlap(px, py, PLAYER_W, PLAYER_H,
+                        d.x, d.y, d.w, d.h)) {
+          this.handleRoomTransition(d.to, d.entry);
+          return;
+        }
+      }
+    }
+
     // Death freezes gameplay. Transition is handled once by
     // onPlayerDeath(). Everything below is skipped until restart.
     if (!this.player.alive) {
@@ -436,18 +486,14 @@ export class GameScene extends Phaser.Scene {
     const rangedHasRoom = this.weapon.hasRangedBelowMax();
     for (const p of this.weaponPickups) {
       if (p.collected) continue;
-      p.update(dt, this.roomFloorY,
-               this.room.getBounds().x,
-               this.room.getBounds().x + this.room.getBounds().w);
+      p.update(dt, this.room);
       const gap = aabbGap(px, py, PLAYER_W, PLAYER_H,
                           p.sprite.x, p.sprite.y, p.width, p.height);
       p.setInRange(gap <= PICKUP_COLLECT_DISTANCE && time >= p.collectableAt, time);
     }
     for (const p of this.ammoPickups) {
       if (p.collected) continue;
-      p.update(dt, this.roomFloorY,
-               this.room.getBounds().x,
-               this.room.getBounds().x + this.room.getBounds().w);
+      p.update(dt, this.room);
       const gap = aabbGap(px, py, PLAYER_W, PLAYER_H,
                           p.sprite.x, p.sprite.y, p.width, p.height);
       p.setInRange(gap <= PICKUP_COLLECT_DISTANCE && rangedHasRoom, time);
@@ -570,12 +616,127 @@ export class GameScene extends Phaser.Scene {
     this.hpBarFill.scaleX = frac;
   }
 
+  // Tears down the current room and starts a new one. Called when the
+  // player crosses an exit edge. Keeps player state (weapons, ammo, HP,
+  // facing) and rebuilds everything room-specific: tiles, walkers,
+  // pickups, camera bounds, exit markers.
+  //
+  // entrySide: 'fromLeft'  - player entered from the left, place on
+  //                           the left edge of the new room
+  //             'fromRight' - place on the right edge (walking back)
+  handleRoomTransition(nextRoomId, entryOverride = null) {
+    if (!ROOMS[nextRoomId]) {
+      console.error('[Room] unknown room id:', nextRoomId);
+      return;
+    }
+    this.transitioningRoom = true;
+
+    // --- tear down ---
+    this.room.destroy();
+    for (const e of this.enemies) if (e.sprite) e.sprite.destroy();
+    this.enemies = [];
+    for (const p of this.weaponPickups) p.destroy();
+    for (const p of this.ammoPickups)   p.destroy();
+    this.weaponPickups = [];
+    this.ammoPickups = [];
+    for (const a of this.activeMeleeArcs) a.graphics.destroy();
+    this.activeMeleeArcs = [];
+
+    // --- load ---
+    this.currentRoomId = nextRoomId;
+    this.room = new RoomLoader(this, ROOMS[nextRoomId]);
+    this.roomFloorY = this.room.getFloorY();
+    for (const ws of this.room.getWalkerSpawns()) {
+      this.enemies.push(new Walker(this, ws.x, ws.y, this.room));
+    }
+    for (const ps of this.room.getPickupSpawns()) {
+      if (ps.kind === 'weapon') {
+        this.weaponPickups.push(new WeaponPickup(this, ps.x, ps.y, ps.weaponId));
+      } else if (ps.kind === 'ammo') {
+        this.ammoPickups.push(new AmmoPickup(this, ps.x, ps.y));
+      }
+    }
+
+    // --- reposition player ---
+    // entryOverride may be:
+    //   null / undefined         -> use destination playerSpawn
+    //   'fromLeft'/'fromRight'   -> spawn BESIDE the destination's left/right
+    //                               door (offset inward). The player must
+    //                               NOT start inside the door AABB or the
+    //                               500ms cooldown will expire and re-trigger
+    //                               the transition -> bounce loop.
+    //   { col, row }             -> explicit tile position (bottom on top of row)
+    //   { x, y }                 -> legacy room-local pixel coords (bottom edge at y)
+    //
+    // doorClearance = DOOR_W/2 + PLAYER_W/2 + 8. aabbOverlap uses
+    // |dx| < (aw+bw)/2 to detect overlap, so anything below doorClearance
+    // in X would re-trigger. The +8 buffer guarantees full clearance.
+    const b = this.room.getBounds();
+    const tileSize = this.room.tileSize;
+    const doorClearance = DOOR_W / 2 + PLAYER_W / 2 + 8;
+    let spawnBottomX;
+    let spawnBottomY;
+    if (entryOverride == null) {
+      const spawn = this.room.getPlayerSpawn();
+      spawnBottomX = spawn.x;
+      spawnBottomY = spawn.y;
+    } else if (typeof entryOverride === 'string') {
+      const wantSide = entryOverride === 'fromLeft' ? 'left' : 'right';
+      const destDoors = this.room.data.doors ?? [];
+      const match = destDoors.find((d) => d.side === wantSide);
+      if (match) {
+        const doorCenterX = b.x + match.col * tileSize + tileSize / 2;
+        if (wantSide === 'left') {
+          spawnBottomX = doorCenterX + doorClearance;
+        } else {
+          spawnBottomX = doorCenterX - doorClearance;
+        }
+        spawnBottomY = b.y + match.row * tileSize;
+      } else {
+        const spawn = this.room.getPlayerSpawn();
+        spawnBottomX = spawn.x;
+        spawnBottomY = spawn.y;
+      }
+    } else if ('col' in entryOverride && 'row' in entryOverride) {
+      spawnBottomX = b.x + entryOverride.col * tileSize + tileSize / 2;
+      spawnBottomY = b.y + entryOverride.row * tileSize;
+    } else if ('x' in entryOverride && 'y' in entryOverride) {
+      spawnBottomX = b.x + entryOverride.x;
+      spawnBottomY = b.y + entryOverride.y;
+    } else {
+      const spawn = this.room.getPlayerSpawn();
+      spawnBottomX = spawn.x;
+      spawnBottomY = spawn.y;
+    }
+    this.player.sprite.x = spawnBottomX;
+    this.player.sprite.y = spawnBottomY - PLAYER_H / 2;
+    this.player.vx = 0;
+    this.player.vy = 0;
+    this.player.onGround = false;
+
+    // --- camera ---
+    // No room bounds - the camera always centers on the player, even at
+    // room edges, so dropped items never land under the on-screen joystick
+    // zone. Black background outside the room is intentional.
+    const cam = this.cameras.main;
+    cam.centerOn(this.player.sprite.x, this.player.sprite.y);
+    cam.startFollow(this.player.sprite, true, CAMERA_LERP, CAMERA_LERP);
+
+    // Cache the new room's doors and start a short cooldown so
+    // arriving inside a door does not re-trigger the swap.
+    this.roomDoors = this.room.getDoorSpawns();
+    this.roomTransitionCooldownUntil = this.time.now + 500;
+
+    this.transitioningRoom = false;
+  }
+
   setupCamera() {
     this.cameraLookaheadX = 0;
     const cam = this.cameras.main;
-    const b = this.room.getBounds();
-    cam.setBounds(b.x, b.y, b.w, b.h);
-    cam.setDeadzone(CAMERA_DEADZONE_W, CAMERA_DEADZONE_H);
+    // No room bounds - the camera always centers on the player, even at
+    // room edges, so dropped items never land under the on-screen joystick
+    // zone. Black background outside the room is intentional.
+    cam.centerOn(this.player.sprite.x, this.player.sprite.y);
     cam.startFollow(this.player.sprite, true, CAMERA_LERP, CAMERA_LERP);
   }
 
