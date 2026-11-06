@@ -1,0 +1,444 @@
+# Working with Files on a Remote System — Reads + Bash Patches
+
+A general workflow for editing files on a system you cannot see directly.
+Two mechanics:
+
+1. **Reading files** — dump to `/dev/clipboard`, ask the user to paste back.
+2. **Writing files** — ship a single self-contained bash script the user runs.
+
+Hard rule: **do not write a patch until you have the actual file contents in
+front of you.** Guessing from memory produces broken patches, and every retry
+costs a full round trip.
+
+---
+
+## 1. Reading files — the /dev/clipboard pattern
+
+### When to use it
+- Before editing any file whose current contents you don't have in front of you
+- Before diagnosing a bug that depends on exact code (not just a symptom)
+- After any previous patch, to confirm the edit actually landed
+- When a user reports an error whose location you don't know
+
+### The dump script
+Ask the user to run a block like this, then paste `/dev/clipboard` back:
+
+```bash
+{
+  echo "=== FILE: /abs/path/to/file1 ==="
+  cat /abs/path/to/file1
+  echo ""
+  echo "=== FILE: /abs/path/to/file2 ==="
+  cat /abs/path/to/file2
+} > /dev/clipboard
+```
+
+### Rules for the dump script
+- One `echo` header per file: `=== FILE: <absolute path> ===`
+- Blank `echo ""` between files so `cat` output doesn't run together
+- Use `cat`, not `sed`/`head`/`tail` — full contents, not excerpts
+- Redirect the whole block with `> /dev/clipboard` (not `>>`)
+- Multiple files in one dump is fine — one clipboard round trip
+- **Dump scripts are pure reads.** No backup, no syntax check, no
+  AFTER-PATCHING. Just the block and exit.
+- Never modify a file during a dump
+- If a file is huge and only one section is relevant, dump a wider slice with
+  `sed -n '100,400p'` and note the range in the header — but when in doubt,
+  dump the whole file. Cheaper than a wrong patch.
+- If the file is binary or enormous, say so in the header (e.g.
+  `=== FILE (truncated to 500 lines): …`) so the user knows what they're
+  looking at.
+
+### Asking for the paste
+After the user runs the dump:
+
+> Paste `/dev/clipboard` back into chat. Do not reformat it. Do not trim it.
+
+### Do not
+- Ask the user to copy/paste file contents manually — formatting will be mangled
+- Ask for "just the important parts" — you don't know what's important until you
+  see it
+- Guess at file contents from memory or from a prior chat summary — the summary
+  may be stale relative to actual disk state
+
+---
+
+## 2. Writing files — the bash patch format
+
+### Structure
+Every patch is a **single self-contained bash script**. The user runs it with:
+
+```bash
+bash /mnt/<name>.sh
+```
+
+Nothing else — no separate steps, no manual edits, no interactive prompts.
+
+```bash
+#!/usr/bin/env bash
+# header comment: what this patch does, why, and what it touches
+set -uo pipefail
+
+PROJ="/root/<project>"
+[ -d "$PROJ" ] || { echo "Error: $PROJ not found" >&2; exit 1; }
+
+# 1. BACKUP — always first
+BAK="/root/<project>-backup-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$BAK"
+cp -r "$PROJ" "$BAK/src"
+echo ">> Backup: $BAK"
+echo ""
+
+# 2. EDIT — one python3 heredoc per file
+echo ">> <file>: <what you're changing>"
+if python3 - "$PROJ/path/to/file" <<'PYEOF'; then
+import sys, re
+path = sys.argv[1]
+with open(path) as f:
+    content = f.read()
+
+old = "..."
+new = "..."
+if old in content:
+    content = content.replace(old, new, 1)
+    with open(path, 'w') as f:
+        f.write(content)
+    print('   done')
+elif "marker of new content" in content:
+    print('   already patched')
+else:
+    print('   ERROR: could not locate target'); sys.exit(1)
+PYEOF
+  echo "   <file>: OK"
+else
+  echo "   <file>: FAILED"
+fi
+echo ""
+
+# 3. SYNTAX CHECK — whatever the language provides
+echo ">> Syntax check"
+# (e.g. node --check, python -m py_compile, bash -n, php -l,
+#  go build -o /dev/null, cargo check --quiet, ruby -c, etc.)
+# Skip any third-party bundle files with a case guard.
+
+# 4. VERIFY — presence checks on unique markers
+echo ""
+echo ">> Verification"
+FAIL=0
+grep -q 'expected marker' "$PROJ/path/to/file" || { echo "  ! <check>"; FAIL=1; }
+[ "$FAIL" -eq 0 ] && echo "  OK — patch applied"
+
+# 5. AFTER PATCHING — instructions
+echo ""
+echo "=============================================================="
+echo "  <Title> — applied"
+echo "=============================================================="
+echo ""
+echo "  Root cause:"
+echo "  <explanation>"
+echo ""
+echo "  What changed:"
+echo "  <bullet list>"
+echo ""
+echo "  AFTER PATCHING:"
+echo "  1. <reload / restart / re-run step>"
+echo "  2. <verify step>"
+echo ""
+echo "  IF STILL BROKEN:"
+echo "  <exact debug commands to paste>"
+echo ""
+echo "  Backup: $BAK/src"
+echo "  Revert: cp -r $BAK/src/. /root/<project>/"
+echo "=============================================================="
+echo ""
+```
+
+### Rules for the bash script
+
+**Header / shell:**
+- Shebang: `#!/usr/bin/env bash`
+- `set -uo pipefail` — **NOT** `set -e`. A failed check shouldn't abort the
+  script mid-way through edits.
+- `PROJ="/abs/path"` with an existence check right after
+- Absolute paths everywhere. No `~/`, no relative paths.
+
+**Backup:**
+- Always first, before any edit
+- `/root/<project>-backup-$(date +%Y%m%d-%H%M%S)/src` (or similar)
+- Print the backup path so the user can revert
+- Revert line in AFTER PATCHING: `cp -r $BAK/src/. /root/<project>/`
+
+**Edits:**
+- One `python3 - "$path" <<'PYEOF' … PYEOF` block per file
+- Quote `'PYEOF'` so bash doesn't interpolate `$` or backticks inside
+- Exit code 1 from python means "could not locate target" — that's the only
+  reason to `sys.exit(1)`. Print `done`, `already patched`, or `ERROR: …`
+- Wrap the python call in `if python3 …; then echo OK; else echo FAILED; fi`
+  so one failed edit doesn't abort the whole script
+- **Never rewrite a whole file** unless truly unavoidable — targeted
+  `content.replace(old, new, 1)` edits are the default
+- **Prefer regex anchors over exact multi-line strings** when the target block
+  may have been modified by a prior patch. Example:
+  ```python
+  pattern = re.compile(r"settings\s*:\s*\{.*?env\s*:\s*['\"]DAY['\"]", re.DOTALL)
+  ```
+  survives comment insertions, blank lines, and re-ordering. A multi-line
+  `old = """..."""` does not.
+- **Print the current block to stdout before replacing** if the edit is at all
+  ambiguous. If the actual content surprises the user, they see it in shell
+  output before the file is modified.
+- **Do not assume the file uses spaces or tabs** — anchor on structure, not
+  whitespace.
+
+**Idempotency:**
+- Every edit needs three branches:
+  1. `old in content` → apply
+  2. `"marker of new content" in content` → already patched, skip
+  3. `else` → error
+- This makes re-running the patch safe. Never ship a script that
+  double-applies on second run.
+
+**Third-party bundles:**
+- Skip syntax checks on minified/bundled libraries (e.g. `*.min.js`, `.umd.js`,
+  vendored `vendor/*`, `node_modules/*`). They're valid but flag under many
+  checkers.
+- Use a `case` guard in the loop:
+  ```bash
+  case "$f" in *min.js|*vendor/*) continue ;; esac
+  ```
+
+**Syntax check:**
+- Whatever the language provides (`node --check`, `python -m py_compile`,
+  `bash -n`, `php -l`, `ruby -c`, `tsc --noEmit`, `cargo check`, `go build`…)
+- **Authoritative** — if it fails, abort before the user sees a broken program
+- `grep` is **not** proof of validity — it can pass while syntax is broken
+- Trust the checker, not grep
+
+**Verification:**
+- Grep for a **unique marker** the patch introduced (not a common string)
+- Also grep for load-bearing invariants that must not have been broken
+  (e.g. `grep -c 'functionName('` should stay at the expected count)
+- Print `OK` only if all checks passed
+
+**AFTER PATCHING:**
+- One-line root cause
+- One-line summary of what changed
+- Numbered test steps the user actually performs
+- Exact debug commands to paste back if broken
+- Backup path + revert line
+- Never omit this section — it's how the user verifies the patch worked
+
+### What grep is and isn't
+
+| `grep` proves | `grep` does NOT prove |
+|---|---|
+| The string exists in the file | The file is syntactically valid |
+| The edit landed | The file is in the expected *shape* |
+| A marker was inserted | The intended behavior will occur |
+| An invariant still matches | The surrounding logic still makes sense |
+
+Classic failure mode: patch applies, `grep` finds the marker, syntax check
+passes — but the block got replaced with a structurally similar but
+semantically wrong shape. Grep is the *cheap* half of verification. The syntax
+check and a runtime sanity test are the other half.
+
+---
+
+## 3. Common pitfalls
+
+### File layout assumptions
+- **Do not assume file contents from memory** or from a prior chat summary.
+  Summaries go stale relative to disk state within one patch.
+- **Do not assume a prior patch landed** unless you see the marker in a fresh
+  dump. Re-dump before writing a follow-up patch.
+
+### Exact-string fragility
+- Multi-line exact-string replacements fail silently when a prior patch
+  inserted a comment, blank line, or re-ordered a block inside the target
+  region.
+- They also fail loudly when whitespace differs (tabs vs spaces, trailing
+  newline).
+- Use regex with `re.DOTALL` for multi-line targets. Anchor on the outermost
+  structural markers, not on inner lines.
+
+### Identifier collisions
+- When changing a function signature (renaming, adding a parameter), grep for
+  the new name inside the function body. A local variable colliding with a
+  renamed parameter is a silent fatal break. Rename the local, not the
+  parameter.
+
+### Stylesheet / template edits
+- **Append, don't exact-replace.** Later rules win at the same specificity.
+  Revert = delete the appended block.
+- Group appended rules under a `/* --- patch: <name> --- */` header so they're
+  easy to find and remove.
+
+### Front-end / DOM edits
+- Any ID referenced by a script at load time must exist in the static markup.
+  Do not move load-time lookups into runtime element creation.
+- When reordering markup, verify all IDs are preserved. Order matters for
+  styling; presence matters for scripting.
+
+### Environment changes
+- **Origin changes invalidate storage.** `http://localhost` vs
+  `http://localhost:8000` are different origins. Browser localStorage,
+  IndexedDB, and cookies are partitioned per origin. Expect "my data is gone"
+  reports after a port change. Not a bug — it's a fresh store.
+- **WebAssembly JIT is disabled on non-HTTPS pages** in some browsers. Libraries
+  that ship `.wasm` can be 10–20× slower over plain `http://` from a LAN IP
+  than over `https://`. Test on the actual user's URL before assuming a WASM
+  library is fast.
+
+### Runtime performance
+- Frame-rate/throughput problems need profiling, not guessing. Ask for concrete
+  numbers (draw calls, op count, step time, network bytes) before patching.
+- "Feels slow" is not the same as "is slow." Distinguish before changing code.
+
+---
+
+## 4. Templates
+
+### Read template (dump to clipboard)
+
+```bash
+{
+  echo "=== FILE: /abs/path/one ==="
+  cat /abs/path/one
+  echo ""
+  echo "=== FILE: /abs/path/two ==="
+  cat /abs/path/two
+} > /dev/clipboard
+```
+
+### Edit template (single self-contained patch)
+
+```bash
+#!/usr/bin/env bash
+# ---------------------------------------------------------------------------
+#  <short title>
+# ---------------------------------------------------------------------------
+#  <root cause + what changes>
+# ---------------------------------------------------------------------------
+set -uo pipefail
+
+PROJ="/root/<project>"
+[ -d "$PROJ" ] || { echo "Error: $PROJ not found" >&2; exit 1; }
+
+BAK="/root/<project>-backup-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$BAK"
+cp -r "$PROJ" "$BAK/src"
+echo ">> Backup: $BAK"
+echo ""
+
+echo ">> <file>: <change>"
+if python3 - "$PROJ/<path>" <<'PYEOF'; then
+import sys, re
+path = sys.argv[1]
+with open(path) as f:
+    content = f.read()
+
+old = "..."
+new = "..."
+if old in content:
+    content = content.replace(old, new, 1)
+    with open(path, 'w') as f:
+        f.write(content)
+    print('   done')
+elif "marker" in content:
+    print('   already patched')
+else:
+    print('   ERROR: could not locate target'); sys.exit(1)
+PYEOF
+  echo "   <file>: OK"
+else
+  echo "   <file>: FAILED"
+fi
+echo ""
+
+echo ">> Syntax check"
+# Example uses node; adapt to the language.
+if command -v node >/dev/null 2>&1; then
+  OK=0; BAD=0
+  for f in "$PROJ"/src/*.js; do
+    case "$f" in *min.js|*vendor/*) continue ;; esac
+    if node --check "$f" >/dev/null 2>&1; then OK=$((OK+1));
+    else
+      echo "  FAIL: $(basename "$f")"
+      node --check "$f" 2>&1 | head -5 | sed 's/^/      /'
+      BAD=$((BAD+1))
+    fi
+  done
+  echo "  $OK OK, $BAD FAILED"
+  [ "$BAD" -eq 0 ] || { echo "  ABORTING"; exit 1; }
+fi
+
+echo ""
+echo ">> Verification"
+FAIL=0
+grep -q 'marker' "$PROJ/<path>" || { echo "  ! <check>"; FAIL=1; }
+[ "$FAIL" -eq 0 ] && echo "  OK — patch applied"
+
+echo ""
+echo "=============================================================="
+echo "  <Title> — applied"
+echo "=============================================================="
+echo ""
+echo "  Root cause:"
+echo "  <explanation>"
+echo ""
+echo "  What changed:"
+echo "  <bullet list>"
+echo ""
+echo "  AFTER PATCHING:"
+echo "  1. <reload / restart step>"
+echo "  2. <verify step>"
+echo ""
+echo "  IF STILL BROKEN:"
+echo "  <debug commands>"
+echo ""
+echo "  Backup: $BAK/src"
+echo "  Revert: cp -r $BAK/src/. /root/<project>/"
+echo "=============================================================="
+echo ""
+```
+
+---
+
+## 5. Language-agnostic syntax-check cheatsheet
+
+| Language | Checker |
+|---|---|
+| JavaScript | `node --check file.js` |
+| TypeScript | `tsc --noEmit file.ts` |
+| Python | `python -m py_compile file.py` |
+| Bash / sh | `bash -n file.sh` |
+| PHP | `php -l file.php` |
+| Ruby | `ruby -c file.rb` |
+| Go | `gofmt -l file.go` (or `go build ./...`) |
+| Rust | `cargo check --quiet` |
+| C / C++ | `gcc -fsyntax-only file.c` |
+| JSON | `python -m json.tool file.json > /dev/null` |
+| YAML | `python -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]))' file.yaml` |
+| CSS | `npx stylelint file.css` (if available) |
+| HTML | `tidy -q -e file.html` (if available) |
+
+Always skip vendored / minified files with a `case` guard.
+
+---
+
+## 6. Checklist before shipping any patch
+
+- [ ] Have I seen the current contents of every file I'm editing?
+      (If no → dump via `/dev/clipboard` first)
+- [ ] Is the target block actually present, exactly as I expect?
+- [ ] If a prior patch may have modified this block, did I use a regex anchor
+      instead of an exact string?
+- [ ] Does every edit have an idempotency branch (`already patched`)?
+- [ ] Does a syntax check run on every edited file (skipping vendored bundles)?
+- [ ] Do the verification greps check **unique markers** (not common strings)?
+- [ ] Do they also check invariants the patch must not break?
+- [ ] Does AFTER PATCHING contain actual test steps the user performs?
+- [ ] Does it contain exact debug commands to paste back if broken?
+- [ ] Does it print the backup path and revert line?
+
+If any of these is unchecked, the patch is not ready.
