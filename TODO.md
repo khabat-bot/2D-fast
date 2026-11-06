@@ -63,12 +63,12 @@ Mobile (iOS) first. Tick items when done: `- [x]`.
 - [ ] Minimap or room indicator (decide with user)
 
 ## 4. Shooting and weapons
-- [ ] Projectile pool
-- [ ] Basic gun (fire rate, damage, speed)
-- [ ] Aiming and muzzle position (works with all 3 aim modes)
-- [ ] Weapon data format in `src/data/weapons.js`
-- [ ] Weapon types: pistol, shotgun, rifle, melee (decide list with user)
-- [ ] Reload / ammo / cooldown rules (decide with user)
+- [x] Projectile pool
+- [x] Basic gun (fire rate, damage, speed)
+- [x] Aiming and muzzle position (works with all 3 aim modes)
+- [x] Weapon data format in `src/data/weapons.js`
+- [x] Weapon types: pistol, shotgun, rifle, melee (decide list with user)
+- [x] Reload / ammo / cooldown rules (decide with user)
 - [ ] Hit effects, recoil, screen shake
 
 ## 5. Enemies

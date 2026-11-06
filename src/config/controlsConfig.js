@@ -33,3 +33,10 @@ export const FIRE_BUTTON_Y_FROM_BOTTOM = 105;
 // for other controls (aim taps, future buttons).
 export const JOYSTICK_ZONE_WIDTH_FRAC     = 1 / 3;
 export const JOYSTICK_ZONE_Y_START_FRAC   = 1 / 1.5;
+
+// Weapon switch button. Top-right corner, distinct color so it is
+// obvious it is not an aim area.
+export const SWITCH_BUTTON_RADIUS        = 22;
+export const SWITCH_BUTTON_X_FROM_RIGHT  = 30;
+export const SWITCH_BUTTON_Y_FROM_TOP    = 40;
+export const SWITCH_BUTTON_COLOR         = 0xff9800;

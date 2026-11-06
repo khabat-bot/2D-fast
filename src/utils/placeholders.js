@@ -20,7 +20,7 @@ function textureKeyFor(key, width, height, color) {
   return `ph:${key}:${width}x${height}:${color.toString(16).padStart(6, '0')}`;
 }
 
-function ensurePlaceholderTexture(scene, texKey, width, height, color) {
+export function ensurePlaceholderTexture(scene, texKey, width, height, color) {
   // Textures live on the game's TextureManager (shared across scenes) and
   // survive scene restarts, so guard against regenerating an existing key.
   if (scene.textures.exists(texKey)) return;
@@ -29,6 +29,22 @@ function ensurePlaceholderTexture(scene, texKey, width, height, color) {
   g.fillRect(0, 0, width, height);
   g.generateTexture(texKey, width, height);
   g.destroy();
+}
+
+// Returns the texture key that placeholderFor would produce for this
+// (key, opts) pair. If real art exists under `key`, that key is returned;
+// otherwise the deterministic generated-placeholder key is returned. No
+// texture is created; nothing is added to the scene. Callers (object
+// pools, for example) use this to precompute one key and reuse it across
+// many sprites without invoking placeholderFor per instance.
+export function placeholderKeyFor(scene, key, opts = {}) {
+  if (scene.textures.exists(key)) return key;
+  const { width, height } = opts;
+  const category = opts.category || 'default';
+  const color = (opts.color != null)
+    ? opts.color
+    : (CATEGORY_COLORS[category] ?? CATEGORY_COLORS.default);
+  return textureKeyFor(key, width, height, color);
 }
 
 export function placeholderFor(scene, key, opts = {}) {

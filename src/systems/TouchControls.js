@@ -44,6 +44,8 @@ export class TouchControls {
       throw new Error(`TouchControls: unknown mode "${this.mode}"`);
     }
 
+    this._fixedButtons = [];
+
     this.onDown = this.handleDown.bind(this);
     this.onMove = this.handleMove.bind(this);
     this.onUp   = this.handleUp.bind(this);
@@ -190,9 +192,20 @@ export class TouchControls {
   // Lets AimController (and any future control system) check whether a
   // pointer has already been claimed by a fixed button before it tries
   // to use it. Add new fixed buttons here.
+  // External systems (GameScene, AimController) can register extra
+  // fixed buttons so isPointerClaimed recognises them and aim
+  // does not steal their taps.
+  registerFixedButton(button) {
+    this._fixedButtons.push(button);
+  }
+
   isPointerClaimed(pointer) {
     // Jump button claims its pointer in every mode.
     if (pointer.id === this.jumpPointerId) return true;
+    // Any registered fixed button claims its taps.
+    for (const b of this._fixedButtons) {
+      if (b.contains(pointer)) return true;
+    }
     // In joystick mode, the entire spawn zone is reserved even before
     // the joystick starts. A tap there is for the joystick, not for aim.
     if (this.mode === 'joystick') {
