@@ -9,9 +9,9 @@ import {
 } from '../entities/Pickup.js';
 import { Button } from '../ui/Button.js';
 import { loadSetting } from '../systems/SettingsStore.js';
-import { placeholderFor } from '../utils/placeholders.js';
 import { pixelText } from '../utils/text.js';
 import { STARTING_WEAPONS } from '../data/weapons.js';
+import { Walker } from '../entities/enemies/Walker.js';
 import {
   JOYSTICK_RADIUS, JOYSTICK_STICK_RADIUS, JOYSTICK_DEADZONE,
   JOYSTICK_ZONE_WIDTH_FRAC, JOYSTICK_ZONE_Y_START_FRAC,
@@ -32,17 +32,22 @@ const FIRE_FLASH_COLOR  = 0xffff33;
 const FIRE_FLASH_DEPTH  = 60;
 const AIM_BRIGHT_MS     = 150;
 const MUZZLE_OFFSET     = PLAYER_W / 2 + 2;
-const TARGET_SIZE       = 20;
 const MELEE_ARC_MS      = 150;
 const MELEE_ARC_COLOR   = 0xffffff;
 const MELEE_ARC_FILL_ALPHA = 0.55;
 const MELEE_ARC_DEPTH   = 55;
 const DROP_COOLDOWN_MS  = 300;
 const DROP_FORWARD_DIST = PLAYER_W / 2 + 8;
-// Facing: aim overrides movement if |aim.x| > this threshold. Below it
-// (aim mostly vertical), movement decides. See update().
 const FACING_AIM_THRESHOLD = 0.1;
 const FACING_MOVE_THRESHOLD = 0.05;
+const HINT_FADE_DELAY_MS = 8000;
+const HINT_FADE_MS       = 800;
+const DMG_NUMBER_DEPTH   = 70;
+const DMG_NUMBER_MS      = 500;
+const DMG_NUMBER_COLOR   = '#ffff44';
+const KILL_BURST_DEPTH   = 58;
+const KILL_BURST_MS      = 300;
+const KILL_BURST_COUNT   = 8;
 
 function aabbOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
   return Math.abs(ax - bx) < (aw + bw) / 2 &&
@@ -68,7 +73,6 @@ export class GameScene extends Phaser.Scene {
     this.prevFirePulse = 0;
     this.lastFireAtMs = -10000;
     this.activeMeleeArcs = [];
-    // +1 = right, -1 = left. Updated from aim (primary) or movement.
     this.facing = 1;
   }
 
@@ -88,15 +92,12 @@ export class GameScene extends Phaser.Scene {
     });
     this.prevJumpHeld = false;
 
-    this.testTarget = placeholderFor(this, 'testTarget', {
-      category: 'enemy',
-      width: TARGET_SIZE,
-      height: TARGET_SIZE,
-      x: width - 60,
-      y: groundY - TARGET_SIZE / 2
-    });
+    this.enemies = [];
+    const walkerBounds = { minX: 40, maxX: width - 40 };
+    const walkerY = groundY - 20 / 2;
+    this.enemies.push(new Walker(this, 250, walkerY, walkerBounds));
+    this.enemies.push(new Walker(this, 320, walkerY, walkerBounds));
 
-    // Test pickups. Positions outside the joystick zone (x >= 130).
     this.weaponPickups = [];
     this.ammoPickups = [];
     this.weaponPickups.push(new WeaponPickup(this, 145, weaponRestY, 'shotgun'));
@@ -135,11 +136,9 @@ export class GameScene extends Phaser.Scene {
 
     this.weapon = new WeaponSystem(this, STARTING_WEAPONS);
 
-    // Slot UI at the top. Tapping a slot selects it; tapping an empty
-    // slot selects fists.
     this.createSlotUI();
 
-    // Drop button (cyan, top-right, left of switch).
+    // Drop button (cyan, top-right). Switch button is gone; slots replace it.
     this.dropButton = new Button(this, {
       x: width - DROP_BUTTON_X_FROM_RIGHT,
       y: DROP_BUTTON_Y_FROM_TOP,
@@ -147,7 +146,8 @@ export class GameScene extends Phaser.Scene {
       color: DROP_BUTTON_COLOR,
       alpha: 0.5,
       pressedAlpha: 0.9,
-      depth: 1000
+      depth: 1000,
+      label: 'D'
     });
     this.controls.registerFixedButton(this.dropButton);
 
@@ -168,9 +168,17 @@ export class GameScene extends Phaser.Scene {
     this.input.on('pointerupoutside', releaseDrop);
 
     this.aimLine = this.add.graphics().setDepth(50);
-    pixelText(this, width / 2, height - 14,
-      'TAP pickups  JUMP  DROP',
+
+    // Hint fades out after a few seconds - it is onboarding, not permanent.
+    this.hintText = pixelText(this, width / 2, height - 14,
+      'TAP pickups  J:jump  D:drop',
       { size: 16, color: '#666666', origin: [0.5, 0.5] });
+    this.tweens.add({
+      targets: this.hintText,
+      alpha: 0,
+      delay: HINT_FADE_DELAY_MS,
+      duration: HINT_FADE_MS
+    });
 
     this.prevFirePulse = this.aim.firePulse;
   }
@@ -182,27 +190,29 @@ export class GameScene extends Phaser.Scene {
       const py = this.player.sprite.y;
       const maxDist = PICKUP_COLLECT_DISTANCE;
 
-      // Weapon pickups first.
       for (let i = this.weaponPickups.length - 1; i >= 0; i--) {
         const p = this.weaponPickups[i];
         if (p.collected || now < p.collectableAt) continue;
         if (!p.contains(pointer.x, pointer.y)) continue;
         if (aabbGap(px, py, PLAYER_W, PLAYER_H,
                     p.sprite.x, p.sprite.y, p.width, p.height) > maxDist) continue;
-        const pickupX = p.sprite.x;
-        const pickupY = p.sprite.y;
         const result = this.weapon.addWeapon(p.weaponId, p.ammo);
         if (!result.added) continue;
         p.collected = true;
         p.destroy();
         this.weaponPickups.splice(i, 1);
         if (result.dropped) {
-          this.spawnDroppedWeapon(result.dropped, pickupX, pickupY, 0);
+          // Throw the swapped-out weapon from the PLAYER in the aim
+          // direction. Previously it spawned at the pickup's world
+          // position with a random kick, which looked like a
+          // teleport. This matches the drop button's behaviour.
+          const swappedAim = this.aim.getAim(px, py);
+          this.spawnDroppedWeapon(result.dropped, px, py,
+            { x: swappedAim.x, y: swappedAim.y });
         }
         return true;
       }
 
-      // Ammo pickups. Do not consume the tap if nothing was refilled.
       for (let i = this.ammoPickups.length - 1; i >= 0; i--) {
         const p = this.ammoPickups[i];
         if (p.collected || now < p.collectableAt) continue;
@@ -223,20 +233,14 @@ export class GameScene extends Phaser.Scene {
 
   dropCurrentWeapon() {
     const dropped = this.weapon.removeCurrent();
-    if (!dropped) return;  // nothing to drop (selected slot is empty -> fists)
+    if (!dropped) return;
     const px = this.player.sprite.x;
     const py = this.player.sprite.y;
     const aim = this.aim.getAim(px, py);
-    // Aim-directed throw: item starts at the player and flies in the
-    // aim direction; gravity arcs it down. Aim up = arcs up, aim
-    // diagonally = arcs diagonally.
     this.spawnDroppedWeapon(dropped, px, py, { x: aim.x, y: aim.y });
     this.refreshSlotUI();
   }
 
-  // dir: { x, y } unit-ish vector for aim-directed throw (drop button).
-  // null = swap-drop (random small pop at the pickup's location, not
-  // from the player).
   spawnDroppedWeapon(dropped, x, y, dir = null) {
     const zoneMinX = this.scale.width * JOYSTICK_ZONE_WIDTH_FRAC + 15;
     const dropX = Phaser.Math.Clamp(x, zoneMinX, this.scale.width - 20);
@@ -261,6 +265,77 @@ export class GameScene extends Phaser.Scene {
     this.weaponPickups.push(pickup);
   }
 
+  createSlotUI() {
+    const width = this.scale.width;
+    const slotW = 80;
+    const slotH = 34;
+    const gap = 6;
+    const totalW = this.weapon.maxSlots * slotW +
+                   (this.weapon.maxSlots - 1) * gap;
+    const startX = (width - totalW) / 2 + slotW / 2;
+    const y = 22;
+    this.slotUI = [];
+    for (let i = 0; i < this.weapon.maxSlots; i++) {
+      const x = startX + i * (slotW + gap);
+      const bg = this.add.rectangle(x, y, slotW, slotH, 0x222222, 0.9)
+        .setDepth(900)
+        .setStrokeStyle(1, 0x555555, 1)
+        .setInteractive();
+      const swatch = this.add.rectangle(
+        x - slotW / 2 + 6, y, 6, slotH - 4, 0x444444, 1
+      ).setDepth(901);
+      const nameLbl = pixelText(this, x - slotW / 2 + 12, y - 7, '',
+        { size: 16, color: '#ffffff', origin: [0, 0.5] }).setDepth(901);
+      const ammoLbl = pixelText(this, x + slotW / 2 - 4, y + 7, '',
+        { size: 16, color: '#cccccc', origin: [1, 0.5] }).setDepth(901);
+      const slotIndex = i;
+      bg.on('pointerdown', () => {
+        this.weapon.selectIndex(slotIndex);
+        this.refreshSlotUI();
+      });
+      this.controls.registerFixedButton({
+        contains: (pointer) => {
+          const dx = pointer.x - x;
+          const dy = pointer.y - y;
+          return Math.abs(dx) <= slotW / 2 && Math.abs(dy) <= slotH / 2;
+        }
+      });
+      this.slotUI.push({ bg, swatch, nameLbl, ammoLbl, x, y });
+    }
+    this.refreshSlotUI();
+  }
+
+  refreshSlotUI() {
+    const view = this.weapon.getSlotsView();
+    for (let i = 0; i < this.slotUI.length; i++) {
+      const ui = this.slotUI[i];
+      const s = view[i];
+      const sel = s.isSelected;
+      const empty = s.empty;
+
+      const bgCol = sel ? (empty ? 0x553300 : 0x004422) : 0x222222;
+      ui.bg.setFillStyle(bgCol, 0.9);
+      ui.bg.setStrokeStyle(sel ? 2 : 1, sel ? 0xffee00 : 0x555555, 1);
+
+      if (empty) {
+        ui.swatch.setFillStyle(0x444444, 1);
+        ui.nameLbl.setText(sel ? 'FISTS' : '\u2014');
+        ui.nameLbl.setTintFill(sel ? 0xffcc44 : 0x666666);
+        ui.ammoLbl.setText('');
+      } else {
+        ui.swatch.setFillStyle(s.color, 1);
+        ui.nameLbl.setText(s.name);
+        ui.nameLbl.setTintFill(0xffffff);
+        if (s.ammo === null) {
+          ui.ammoLbl.setText('');
+        } else {
+          ui.ammoLbl.setText(`${s.ammo}/${s.maxAmmo}`);
+          ui.ammoLbl.setTintFill(s.ammo === 0 ? 0xff4444 : 0xcccccc);
+        }
+      }
+    }
+  }
+
   update(time, delta) {
     const dt = Math.min(delta, 50) / 1000;
 
@@ -279,9 +354,14 @@ export class GameScene extends Phaser.Scene {
     const px = this.player.sprite.x;
     const py = this.player.sprite.y;
 
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const e = this.enemies[i];
+      if (!e.alive) { this.enemies.splice(i, 1); continue; }
+      e.update(dt);
+    }
+
     if (this.activeMeleeArcs.length > 0) this.redrawMeleeArcs(px, py);
 
-    // Pickup physics + in-range highlight.
     const rangedHasRoom = this.weapon.hasRangedBelowMax();
     for (const p of this.weaponPickups) {
       if (p.collected) continue;
@@ -302,8 +382,6 @@ export class GameScene extends Phaser.Scene {
     const fire = this.aim.consumeFire();
     if (fire) this.lastFireAtMs = time;
 
-    // Facing rule: aim overrides movement when it has a real horizontal
-    // component. Straight-up aim defers to movement. No input = last facing.
     const aimActive = this.aim.aimPointerId !== null || fire;
     if (aimActive && Math.abs(aim.x) > FACING_AIM_THRESHOLD) {
       this.facing = aim.x > 0 ? 1 : -1;
@@ -328,18 +406,24 @@ export class GameScene extends Phaser.Scene {
 
     this.weapon.update(dt);
 
-    if (this.testTarget && this.testTarget.active) {
-      this.weapon.forEachActiveProjectile((p) => {
-        if (!p.active) return;
+    this.weapon.forEachActiveProjectile((p) => {
+      if (!p.active) return;
+      for (const e of this.enemies) {
+        if (!e.alive || !e.sprite) continue;
         if (aabbOverlap(
           p.sprite.x, p.sprite.y, p.width, p.height,
-          this.testTarget.x, this.testTarget.y, TARGET_SIZE, TARGET_SIZE
+          e.sprite.x, e.sprite.y, e.width, e.height
         )) {
+          const ex = e.sprite.x;
+          const ey = e.sprite.y;
+          const died = e.hit(p.damage);
+          this.spawnDamageNumber(ex, ey - 15, p.damage);
+          if (died) this.spawnKillBurst(ex, ey, e.def?.color ?? 0xe53935);
           p.deactivate();
-          this.flashTarget();
+          break;
         }
-      });
-    }
+      }
+    });
 
     if (this.aim.firePulse !== this.prevFirePulse) {
       this.prevFirePulse = this.aim.firePulse;
@@ -363,69 +447,37 @@ export class GameScene extends Phaser.Scene {
       this.aimLine.strokePath();
     }
 
-    // Slot UI refreshes each frame - ammo decrements on fire, drops
-    // remove entries, pickups add them. Cheap enough at 3 slots.
     this.refreshSlotUI();
   }
 
-  createSlotUI() {
-    const width = this.scale.width;
-    const slotW = 76;
-    const slotH = 22;
-    const gap = 6;
-    const totalW = this.weapon.maxSlots * slotW +
-                   (this.weapon.maxSlots - 1) * gap;
-    const startX = (width - totalW) / 2 + slotW / 2;
-    const y = 16;
-    this.slotUI = [];
-    for (let i = 0; i < this.weapon.maxSlots; i++) {
-      const x = startX + i * (slotW + gap);
-      const bg = this.add.rectangle(x, y, slotW, slotH, 0x333333, 0.85)
-        .setDepth(900)
-        .setStrokeStyle(1, 0x666666, 1)
-        .setInteractive();
-      const label = pixelText(this, x, y, '',
-        { size: 16, color: '#ffffff', origin: [0.5, 0.5] }).setDepth(901);
-      const slotIndex = i;
-      bg.on('pointerdown', () => {
-        this.weapon.selectIndex(slotIndex);
-        this.refreshSlotUI();
-      });
-      // Register a hit-test with TouchControls so aim does not steal
-      // pointer taps on slots (same mechanism as jump/drop buttons).
-      this.controls.registerFixedButton({
-        contains: (pointer) => {
-          const dx = pointer.x - x;
-          const dy = pointer.y - y;
-          return Math.abs(dx) <= slotW / 2 && Math.abs(dy) <= slotH / 2;
-        }
-      });
-      this.slotUI.push({ bg, label, x, y });
-    }
-    this.refreshSlotUI();
+  spawnDamageNumber(x, y, dmg) {
+    const t = pixelText(this, x, y, `-${dmg}`, {
+      size: 16, color: DMG_NUMBER_COLOR, origin: [0.5, 0.5]
+    }).setDepth(DMG_NUMBER_DEPTH);
+    this.tweens.add({
+      targets: t,
+      y: y - 20,
+      alpha: 0,
+      duration: DMG_NUMBER_MS,
+      ease: 'Quad.easeOut',
+      onComplete: () => t.destroy()
+    });
   }
 
-  refreshSlotUI() {
-    const view = this.weapon.getSlotsView();
-    for (let i = 0; i < this.slotUI.length; i++) {
-      const ui = this.slotUI[i];
-      const s = view[i];
-      const sel = s.isSelected;
-      const empty = s.empty;
-      const bgCol = sel
-        ? (empty ? 0xaa6600 : 0x00aa44)
-        : (empty ? 0x1a1a1a : 0x333333);
-      ui.bg.setFillStyle(bgCol, 0.85);
-      ui.bg.setStrokeStyle(1, sel ? 0xffee00 : 0x666666, 1);
-      let label = '';
-      if (empty) {
-        label = sel ? 'FISTS' : '-';
-      } else if (s.ammo === null) {
-        label = s.name;
-      } else {
-        label = `${s.name} ${s.ammo}`;
-      }
-      ui.label.setText(label);
+  spawnKillBurst(x, y, color) {
+    for (let i = 0; i < KILL_BURST_COUNT; i++) {
+      const a = (i / KILL_BURST_COUNT) * Math.PI * 2;
+      const speed = 30 + Math.random() * 20;
+      const dot = this.add.circle(x, y, 2, color, 1).setDepth(KILL_BURST_DEPTH);
+      this.tweens.add({
+        targets: dot,
+        x: x + Math.cos(a) * speed,
+        y: y + Math.sin(a) * speed,
+        alpha: 0,
+        duration: KILL_BURST_MS,
+        ease: 'Quad.easeOut',
+        onComplete: () => dot.destroy()
+      });
     }
   }
 
@@ -484,23 +536,21 @@ export class GameScene extends Phaser.Scene {
   checkMeleeHits(px, py, aim, weapon) {
     const halfArc = (weapon.melee.arcDegrees / 2) * Math.PI / 180;
     const aimAngle = Math.atan2(aim.y, aim.x);
-    if (!this.testTarget || !this.testTarget.active) return;
-    const dx = this.testTarget.x - px;
-    const dy = this.testTarget.y - py;
-    const dist = Math.hypot(dx, dy);
-    if (dist > weapon.melee.range + TARGET_SIZE / 2) return;
-    const targetAngle = Math.atan2(dy, dx);
-    if (Math.abs(angleDelta(targetAngle, aimAngle)) <= halfArc) {
-      this.flashTarget();
+    for (const e of this.enemies) {
+      if (!e.alive || !e.sprite) continue;
+      const dx = e.sprite.x - px;
+      const dy = e.sprite.y - py;
+      const dist = Math.hypot(dx, dy);
+      const reach = weapon.melee.range + Math.max(e.width, e.height) / 2;
+      if (dist > reach) continue;
+      const targetAngle = Math.atan2(dy, dx);
+      if (Math.abs(angleDelta(targetAngle, aimAngle)) <= halfArc) {
+        const ex = e.sprite.x;
+        const ey = e.sprite.y;
+        const died = e.hit(weapon.melee.damage);
+        this.spawnDamageNumber(ex, ey - 15, weapon.melee.damage);
+        if (died) this.spawnKillBurst(ex, ey, e.def?.color ?? 0xe53935);
+      }
     }
-  }
-
-  flashTarget() {
-    if (!this.testTarget || this.testTarget.isTinted) return;
-    this.testTarget.setFillStyle ? null : null;  // no-op, keeps lint quiet
-    this.testTarget.setTintFill(0xffffff);
-    this.time.delayedCall(80, () => {
-      if (this.testTarget) this.testTarget.clearTint();
-    });
   }
 }

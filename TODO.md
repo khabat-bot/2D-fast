@@ -73,7 +73,7 @@ Mobile (iOS) first. Tick items when done: `- [x]`.
 
 ## 5. Enemies
 - [ ] Enemy base class and pool
-- [ ] Walker enemy
+- [x] Walker enemy
 - [ ] Flyer enemy
 - [ ] Shooter enemy
 - [ ] Enemy spawning tied to room templates

@@ -147,12 +147,16 @@ export class WeaponSystem {
       if (slot) {
         const w = WEAPONS[slot.weaponId];
         view.push({
-          index: i, empty: false, name: w.name, ammo: slot.ammo,
+          index: i, empty: false, name: w.name,
+          ammo: slot.ammo,
+          maxAmmo: w.type === 'ranged' ? w.ammo.max : null,
+          color: w.color,
           isSelected: i === this.selectedIndex
         });
       } else {
         view.push({
-          index: i, empty: true, name: '-', ammo: null,
+          index: i, empty: true, name: '—',
+          ammo: null, maxAmmo: null, color: 0x444444,
           isSelected: i === this.selectedIndex
         });
       }

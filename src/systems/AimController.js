@@ -89,7 +89,8 @@ export class AimController {
         x: opts.fireButtonX ?? (scene.scale.width - 50),
         y: opts.fireButtonY ?? (scene.scale.height - 105),
         radius: opts.fireButtonRadius ?? 24,
-        depth: CONTROL_DEPTH
+        depth: CONTROL_DEPTH,
+        label: 'F'
       });
       this.firePointerId = null;
     }

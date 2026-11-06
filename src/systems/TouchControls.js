@@ -29,7 +29,8 @@ export class TouchControls {
       x: scene.scale.width - (opts.jumpButtonXFromRight ?? 50),
       y: scene.scale.height - (opts.jumpButtonYFromBottom ?? 45),
       radius: opts.jumpButtonRadius ?? 32,
-      depth: CONTROL_DEPTH
+      depth: CONTROL_DEPTH,
+      label: 'J'
     });
     this.jumpPointerId = null;
 
@@ -130,8 +131,8 @@ export class TouchControls {
     const yb = opts.buttonYFromBottom ?? 50;
     const y  = height - yb;
 
-    this.buttonLeft  = new Button(this.scene, { x: lx, y, radius: r, depth: CONTROL_DEPTH });
-    this.buttonRight = new Button(this.scene, { x: rx, y, radius: r, depth: CONTROL_DEPTH });
+    this.buttonLeft  = new Button(this.scene, { x: lx, y, radius: r, depth: CONTROL_DEPTH, label: '<' });
+    this.buttonRight = new Button(this.scene, { x: rx, y, radius: r, depth: CONTROL_DEPTH, label: '>' });
     this.leftPointerId  = null;
     this.rightPointerId = null;
   }
