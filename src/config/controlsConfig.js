@@ -40,3 +40,11 @@ export const SWITCH_BUTTON_RADIUS        = 22;
 export const SWITCH_BUTTON_X_FROM_RIGHT  = 30;
 export const SWITCH_BUTTON_Y_FROM_TOP    = 40;
 export const SWITCH_BUTTON_COLOR         = 0xff9800;
+
+// Drop button. Top-right, left of the switch button. Cyan (switch is
+// orange) so they are distinguishable at a glance. Dropped items go
+// forward in the player's facing direction.
+export const DROP_BUTTON_RADIUS        = 20;
+export const DROP_BUTTON_X_FROM_RIGHT  = 90;
+export const DROP_BUTTON_Y_FROM_TOP    = 40;
+export const DROP_BUTTON_COLOR         = 0x00bcd4;

@@ -45,6 +45,7 @@ export class TouchControls {
     }
 
     this._fixedButtons = [];
+    this._onPickupTap = null;
 
     this.onDown = this.handleDown.bind(this);
     this.onMove = this.handleMove.bind(this);
@@ -199,26 +200,36 @@ export class TouchControls {
     this._fixedButtons.push(button);
   }
 
+  // Called by the scene to install a world-pickup tap handler. The
+  // callback should return true if it handled the pointer (a
+  // pickup was collected), false otherwise. Runs before the
+  // joystick-zone check so pickups near the joystick still work.
+  setOnPickupTap(fn) {
+    this._onPickupTap = fn;
+  }
+
   isPointerClaimed(pointer) {
-    // Jump button claims its pointer in every mode.
+    // Order matters. Movement controls take priority over pickups:
+    // a tap inside the joystick zone or on an L/R button does NOT
+    // try to pick up an item under that tap.
+    //   1. jump button
+    //   2. registered fixed buttons (switch)
+    //   3. movement area (joystick zone or L/R circles)
+    //   4. world-pickup tap (free screen space only)
     if (pointer.id === this.jumpPointerId) return true;
-    // Any registered fixed button claims its taps.
     for (const b of this._fixedButtons) {
       if (b.contains(pointer)) return true;
     }
-    // In joystick mode, the entire spawn zone is reserved even before
-    // the joystick starts. A tap there is for the joystick, not for aim.
     if (this.mode === 'joystick') {
       const w = this.scene.scale.width;
       const h = this.scene.scale.height;
       if (pointer.x < w * this.joystickZoneWidthFrac &&
           pointer.y > h * this.joystickZoneYStartFrac) return true;
     } else if (this.mode === 'buttons') {
-      // In buttons mode, the L and R circles are claimed. Taps in the
-      // gap between them are NOT claimed and can be used for aim.
       if (this.buttonLeft.contains(pointer)) return true;
       if (this.buttonRight.contains(pointer)) return true;
     }
+    if (this._onPickupTap && this._onPickupTap(pointer)) return true;
     return false;
   }
 

@@ -33,6 +33,17 @@
 // No reloading. Ammo depletes on fire, weapon stays equipped but useless
 // at 0. Refill via ammo pickups (patch 2).
 export const WEAPONS = {
+  // Fists: implicit fallback weapon. Never in any inventory, cannot be
+  // dropped, not in STARTING_WEAPONS. WeaponSystem.current returns a
+  // synthetic fists slot when slots is empty so a fully-dropped player
+  // can still fight (weakly).
+  fists: {
+    id: 'fists', name: 'Fists', type: 'melee',
+    fireRate: 3,
+    melee: { range: 26, arcDegrees: 80, damage: 5 },
+    color: 0xcccccc
+  },
+
   // --- melee ---------------------------------------------------------------
   sword: {
     id: 'sword', name: 'Sword', type: 'melee',
