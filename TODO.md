@@ -36,8 +36,8 @@ Mobile (iOS) first. Tick items when done: `- [x]`.
 - [x] Run with acceleration and deceleration
 - [x] Jump with variable height
 - [x] Coyote time and jump buffering
-- [ ] Wall slide
-- [ ] Wall jump
+- [x] Wall slide
+- [x] Wall jump
 - [ ] Dash ability in code, only active when the Dash accessory is equipped (not available on a fresh run)
 - [ ] Dash behavior like Terraria: dashes in the facing direction, small cooldown, invincible while dashing
 - [ ] Dash button on touch controls (shown only when the accessory is equipped)
@@ -52,11 +52,11 @@ Mobile (iOS) first. Tick items when done: `- [x]`.
 - [ ] Every room has an entrance (door/place) and an exit (door/place); no room types
 - [ ] Difficulty scaling as the run goes on
 - [ ] Seeded generation (for debugging and reproducing bugs)
-- [ ] Solid tiles, one-way platforms
+- [x] Solid tiles, one-way platforms
 - [ ] Parallax background
 - [ ] First 5 to 10 hand-built room templates
 - [ ] Run manager: start run, track progress, end run
-- [ ] Death resets everything, no checkpoints, no permanent unlocks
+- [x] Death resets everything, no checkpoints, no permanent unlocks
 - [ ] Run is endless and ends only when every player is dead
 - [ ] Next-room exit stays locked until every enemy in the room is dead
 - [ ] Unlock feedback (exit opens, visible indicator of enemies remaining)
@@ -77,7 +77,7 @@ Mobile (iOS) first. Tick items when done: `- [x]`.
 - [ ] Flyer enemy
 - [ ] Shooter enemy
 - [ ] Enemy spawning tied to room templates
-- [ ] Player damage, invincibility frames, death
+- [x] Player damage, invincibility frames, death
 - [ ] Each enemy type has its own size, hitbox and stats in `src/data/enemies.js` (sizes vary, not 16x16)
 - [ ] Boss (optional, not planned)
 

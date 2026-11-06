@@ -18,6 +18,7 @@ export const ENEMIES = {
     speed: 40,
     width: 20,
     height: 20,
-    color: 0xe53935
+    color: 0xe53935,
+    contactDamage: 10
   }
 };

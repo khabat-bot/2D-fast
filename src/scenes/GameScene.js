@@ -12,6 +12,8 @@ import { loadSetting } from '../systems/SettingsStore.js';
 import { pixelText } from '../utils/text.js';
 import { STARTING_WEAPONS } from '../data/weapons.js';
 import { Walker } from '../entities/enemies/Walker.js';
+import { RoomLoader } from '../world/RoomLoader.js';
+import { ROOMS } from '../data/rooms.js';
 import {
   JOYSTICK_RADIUS, JOYSTICK_STICK_RADIUS, JOYSTICK_DEADZONE,
   JOYSTICK_ZONE_WIDTH_FRAC, JOYSTICK_ZONE_Y_START_FRAC,
@@ -49,6 +51,14 @@ const KILL_BURST_DEPTH   = 58;
 const KILL_BURST_MS      = 300;
 const KILL_BURST_COUNT   = 8;
 
+// HP bar (top-left, distinct from the slot strip).
+const HP_BAR_W = 50;
+const HP_BAR_H = 10;
+const HP_BAR_X = 8;
+const HP_BAR_Y = 15;
+const HP_BAR_DEPTH = 900;
+const HP_BAR_COLOR = 0xff3333;
+
 function aabbOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
   return Math.abs(ax - bx) < (aw + bw) / 2 &&
          Math.abs(ay - by) < (ah + bh) / 2;
@@ -77,26 +87,43 @@ export class GameScene extends Phaser.Scene {
   }
 
   create() {
+    // Reset instance state. The constructor does NOT re-run on
+    // scene.restart() - only create() does - so any array/flag that
+    // would persist across a restart must be reset here.
+    this.activeMeleeArcs = [];
+    this.prevFirePulse = 0;
+    this.lastFireAtMs = -10000;
+    this.facing = 1;
+    this.dying = false;
+    this.stats = {
+      elapsedMs: 0,
+      kills: 0,
+      damageDealt: 0,
+      damageTaken: 0
+    };
+
     const { width, height } = this.scale;
-    const groundY = height - 30;
-    this.groundY = groundY;
-    const weaponRestY = groundY - WEAPON_PICKUP_SIZE / 2;
-    const ammoRestY   = groundY - AMMO_PICKUP_SIZE / 2;
 
-    this.add.rectangle(width / 2, groundY + 1, width, 2, 0x333333);
+    // Load the room. Single room for now; multi-room comes later.
+    this.room = new RoomLoader(this, ROOMS.test_room);
+    this.roomFloorY = this.room.getFloorY();
+    const weaponRestY = this.roomFloorY - WEAPON_PICKUP_SIZE / 2;
+    const ammoRestY   = this.roomFloorY - AMMO_PICKUP_SIZE / 2;
 
+    const spawn = this.room.getPlayerSpawn();
     this.player = new Player(this, {
-      x: width / 2 - 60,
-      y: groundY - PLAYER_H / 2,
-      groundY
+      x: spawn.x,
+      y: spawn.y - PLAYER_H / 2,
+      room: this.room
     });
     this.prevJumpHeld = false;
+    this.createHpBar();
 
     this.enemies = [];
-    const walkerBounds = { minX: 40, maxX: width - 40 };
-    const walkerY = groundY - 20 / 2;
-    this.enemies.push(new Walker(this, 250, walkerY, walkerBounds));
-    this.enemies.push(new Walker(this, 320, walkerY, walkerBounds));
+    const walkerBounds = this.room.getWalkerBounds();
+    for (const ws of this.room.getWalkerSpawns()) {
+      this.enemies.push(new Walker(this, ws.x, ws.y, walkerBounds));
+    }
 
     this.weaponPickups = [];
     this.ammoPickups = [];
@@ -185,6 +212,7 @@ export class GameScene extends Phaser.Scene {
 
   setupPickupTaps() {
     this.controls.setOnPickupTap((pointer) => {
+      if (!this.player.alive) return false;
       const now = this.time.now;
       const px = this.player.sprite.x;
       const py = this.player.sprite.y;
@@ -245,8 +273,8 @@ export class GameScene extends Phaser.Scene {
     const zoneMinX = this.scale.width * JOYSTICK_ZONE_WIDTH_FRAC + 15;
     const dropX = Phaser.Math.Clamp(x, zoneMinX, this.scale.width - 20);
     const dropY = (y !== undefined)
-      ? Phaser.Math.Clamp(y, 10, this.groundY - WEAPON_PICKUP_SIZE / 2)
-      : (this.groundY - WEAPON_PICKUP_SIZE / 2);
+      ? Phaser.Math.Clamp(y, 10, this.roomFloorY - WEAPON_PICKUP_SIZE / 2)
+      : (this.roomFloorY - WEAPON_PICKUP_SIZE / 2);
     const pickup = new WeaponPickup(
       this, dropX, dropY,
       dropped.weaponId, dropped.ammo,
@@ -338,6 +366,7 @@ export class GameScene extends Phaser.Scene {
 
   update(time, delta) {
     const dt = Math.min(delta, 50) / 1000;
+    this.stats.elapsedMs += delta;
 
     const jumpHeld = this.controls.jumpHeld;
     const jumpJustPressed  = jumpHeld && !this.prevJumpHeld;
@@ -360,19 +389,49 @@ export class GameScene extends Phaser.Scene {
       e.update(dt);
     }
 
+    // Contact damage. One hit per frame max - i-frames inside the
+    // player handle repeat prevention within the same touch.
+    if (this.player.alive) {
+      for (const e of this.enemies) {
+        if (!e.alive || !e.sprite) continue;
+        if (aabbOverlap(
+          px, py, PLAYER_W, PLAYER_H,
+          e.sprite.x, e.sprite.y, e.width, e.height
+        )) {
+          const dmg = e.def?.contactDamage ?? 10;
+          const r = this.player.takeDamage(dmg, e.sprite.x);
+          if (r.hit) this.stats.damageTaken += dmg;
+          break;
+        }
+      }
+    }
+
+    // Death freezes gameplay. Transition is handled once by
+    // onPlayerDeath(). Everything below is skipped until restart.
+    if (!this.player.alive) {
+      if (!this.dying) { this.dying = true; this.onPlayerDeath(); }
+      this.refreshHpBar();
+      this.refreshSlotUI();
+      return;
+    }
+
     if (this.activeMeleeArcs.length > 0) this.redrawMeleeArcs(px, py);
 
     const rangedHasRoom = this.weapon.hasRangedBelowMax();
     for (const p of this.weaponPickups) {
       if (p.collected) continue;
-      p.update(dt, this.groundY, 0, this.scale.width);
+      p.update(dt, this.roomFloorY,
+               this.room.getBounds().x,
+               this.room.getBounds().x + this.room.getBounds().w);
       const gap = aabbGap(px, py, PLAYER_W, PLAYER_H,
                           p.sprite.x, p.sprite.y, p.width, p.height);
       p.setInRange(gap <= PICKUP_COLLECT_DISTANCE && time >= p.collectableAt, time);
     }
     for (const p of this.ammoPickups) {
       if (p.collected) continue;
-      p.update(dt, this.groundY, 0, this.scale.width);
+      p.update(dt, this.roomFloorY,
+               this.room.getBounds().x,
+               this.room.getBounds().x + this.room.getBounds().w);
       const gap = aabbGap(px, py, PLAYER_W, PLAYER_H,
                           p.sprite.x, p.sprite.y, p.width, p.height);
       p.setInRange(gap <= PICKUP_COLLECT_DISTANCE && rangedHasRoom, time);
@@ -416,9 +475,13 @@ export class GameScene extends Phaser.Scene {
         )) {
           const ex = e.sprite.x;
           const ey = e.sprite.y;
-          const died = e.hit(p.damage);
+          const died = e.hit(p.damage, p.sprite.x);
           this.spawnDamageNumber(ex, ey - 15, p.damage);
-          if (died) this.spawnKillBurst(ex, ey, e.def?.color ?? 0xe53935);
+          this.stats.damageDealt += p.damage;
+          if (died) {
+            this.spawnKillBurst(ex, ey, e.def?.color ?? 0xe53935);
+            this.stats.kills += 1;
+          }
           p.deactivate();
           break;
         }
@@ -447,7 +510,42 @@ export class GameScene extends Phaser.Scene {
       this.aimLine.strokePath();
     }
 
+    this.refreshHpBar();
     this.refreshSlotUI();
+  }
+
+  createHpBar() {
+    this.hpBarBg = this.add
+      .rectangle(HP_BAR_X, HP_BAR_Y, HP_BAR_W, HP_BAR_H, 0x000000, 0.7)
+      .setOrigin(0, 0.5)
+      .setDepth(HP_BAR_DEPTH)
+      .setStrokeStyle(1, 0x666666, 1);
+    this.hpBarFill = this.add
+      .rectangle(HP_BAR_X, HP_BAR_Y, HP_BAR_W, HP_BAR_H, HP_BAR_COLOR, 1)
+      .setOrigin(0, 0.5)
+      .setDepth(HP_BAR_DEPTH + 1);
+    this.refreshHpBar();
+  }
+
+  refreshHpBar() {
+    const frac = Math.max(0, this.player.hp / this.player.maxHp);
+    this.hpBarFill.scaleX = frac;
+  }
+
+  onPlayerDeath() {
+    // Snapshot stats at the moment of death. If we read this.stats
+    // inside the delayed callback the 400ms fade would inflate the
+    // 'survived' time.
+    const finalStats = {
+      elapsedMs: this.stats.elapsedMs,
+      kills: this.stats.kills,
+      damageDealt: this.stats.damageDealt,
+      damageTaken: this.stats.damageTaken
+    };
+    this.cameras.main.fadeOut(400, 0, 0, 0);
+    this.cameras.main.once('camerafadeoutcomplete', () => {
+      this.scene.start('GameOverScene', { stats: finalStats });
+    });
   }
 
   spawnDamageNumber(x, y, dmg) {
@@ -547,9 +645,13 @@ export class GameScene extends Phaser.Scene {
       if (Math.abs(angleDelta(targetAngle, aimAngle)) <= halfArc) {
         const ex = e.sprite.x;
         const ey = e.sprite.y;
-        const died = e.hit(weapon.melee.damage);
+        const died = e.hit(weapon.melee.damage, px);
         this.spawnDamageNumber(ex, ey - 15, weapon.melee.damage);
-        if (died) this.spawnKillBurst(ex, ey, e.def?.color ?? 0xe53935);
+        this.stats.damageDealt += weapon.melee.damage;
+        if (died) {
+          this.spawnKillBurst(ex, ey, e.def?.color ?? 0xe53935);
+          this.stats.kills += 1;
+        }
       }
     }
   }

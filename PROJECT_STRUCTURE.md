@@ -31,6 +31,7 @@ project-root/
     │   ├── playerConfig.js   # Speeds, jump, wall jump values (dash values live in data/accessories.js)
     │   ├── controlsConfig.js # Touch layout defaults
     │   ├── pickupConfig.js   # Pickup collection distance
+    │   ├── roomConfig.js     # Tile size and room layout constants
     │   └── runConfig.js      # Run length, difficulty scaling
     ├── shared/               # Plain JS game logic, no Phaser/DOM: runs on the server and in the phone's browser (solo, prediction)
     │   ├── Simulation.js     # Game loop, movement, collisions, enemies, rooms

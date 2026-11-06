@@ -30,7 +30,11 @@ export class Enemy {
     this.hpBarTween = null;
   }
 
-  hit(damage) {
+  // fromX: optional source position for knockback direction. The base
+  // class does not use it; subclasses override onHit to apply knockback.
+  // Passing null skips onHit entirely, which suits enemies without
+  // physics (future flyers that stay on a path may ignore this).
+  hit(damage, fromX = null) {
     if (!this.alive) return false;
     this.hp -= damage;
     this.flashHit();
@@ -38,9 +42,13 @@ export class Enemy {
       this.die();
       return true;
     }
+    this.onHit(damage, fromX);
     this.showHpBar();
     return false;
   }
+
+  // Hook for subclasses. Base: no-op. Walker uses it for knockback.
+  onHit(_damage, _fromX) { /* no-op */ }
 
   flashHit() {
     if (!this.sprite || this.sprite.isTinted) return;

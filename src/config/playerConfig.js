@@ -24,3 +24,35 @@ export const JUMP_RELEASE_GRAVITY_MULT = 2.5;
 // Forgiveness windows (seconds). Standard platformer values.
 export const COYOTE_TIME = 0.10;     // still jumpable after leaving ground
 export const JUMP_BUFFER = 0.12;     // still jumps if pressed shortly before landing
+
+// HP and damage.
+// --- Movement tunables (single source of truth) ------------------------
+// Toggles
+export const WALL_SLIDE_ENABLED = true;   // false disables wall slide
+export const WALL_JUMP_ENABLED  = true;   // false disables wall jump
+
+// Air control multipliers (1.0 = same as ground, 0.5 = half air control)
+export const AIR_ACCEL_MULT     = 1.0;
+export const AIR_FRICTION_MULT  = 1.0;
+
+// I-frame visual feel
+export const IFRAME_ALPHA_LOW   = 0.4;   // alpha during flicker
+export const IFRAME_FLICKER_MS  = 100;   // ms per flicker phase
+
+// Safety-net slack for the Y clamp: how far outside the room bounds
+// the player can be before being snapped back. 32 = one player height.
+export const Y_BOUNDS_SLACK     = 32;
+
+// Wall interaction (added with rooms).
+export const WALL_SLIDE_SPEED = 80;    // px/s max fall speed while on wall
+export const WALL_JUMP_VX     = 260;   // px/s away from wall
+export const WALL_JUMP_VY     = -320;  // px/s up
+export const WALL_JUMP_LOCK   = 0.15;  // seconds input is ignored after wall jump
+
+// HP and damage.
+export const PLAYER_MAX_HP          = 100;
+export const PLAYER_IFRAME_MS       = 500;  // invulnerable window after a hit
+export const PLAYER_HIT_FLASH_MS    = 100;   // white flash on the sprite
+export const PLAYER_HIT_KNOCKBACK_X = 350;   // horizontal push away from attacker
+export const PLAYER_HIT_KNOCKBACK_Y = -200;  // small upward pop
+
