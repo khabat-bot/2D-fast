@@ -17,25 +17,25 @@ Mobile (iOS) first. Tick items when done: `- [x]`.
 - [ ] Art files are picked up automatically when added (no code change); missing files fall back to the placeholder
 
 ## 1. Touch controls and aiming
-- [ ] Movement mode 1: virtual movement joystick
-- [ ] Movement mode 2: left/right buttons
-- [ ] Switch movement mode in Settings, save choice in localStorage
-- [ ] Jump button
+- [x] Movement mode 1: virtual movement joystick
+- [x] Movement mode 2: left/right buttons
+- [x] Switch movement mode in Settings, save choice in localStorage
+- [x] Jump button
 - [ ] Weapon switch button
-- [ ] `AimController` that outputs aim direction + fire state for all modes
-- [ ] Aim mode 1: aim-and-shoot stick (aims and shoots while held)
-- [ ] Aim mode 2: aim stick + separate fire button
-- [ ] Aim mode 3: tap on screen to shoot at that point
-- [ ] Switch aim mode in Settings, save choice in localStorage
+- [x] `AimController` that outputs aim direction + fire state for all modes
+- [x] Aim mode 1: aim-and-shoot stick (aims and shoots while held)
+- [x] Aim mode 2: aim stick + separate fire button
+- [x] Aim mode 3: tap on screen to shoot at that point
+- [x] Switch aim mode in Settings, save choice in localStorage
 - [ ] Multi-touch tested in every mode: move + jump + aim/shoot at the same time
 - [ ] Controls respect safe areas and have large touch targets
 - [ ] Keyboard/mouse input mapped to the same actions (desktop debug only)
 - [ ] Control layout settings (size / position / opacity)
 
 ## 2. Player movement
-- [ ] Run with acceleration and deceleration
-- [ ] Jump with variable height
-- [ ] Coyote time and jump buffering
+- [x] Run with acceleration and deceleration
+- [x] Jump with variable height
+- [x] Coyote time and jump buffering
 - [ ] Wall slide
 - [ ] Wall jump
 - [ ] Dash ability in code, only active when the Dash accessory is equipped (not available on a fresh run)

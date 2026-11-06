@@ -16,13 +16,23 @@
 export const FONT_KEY = 'm6x11';
 export const FONT_SIZE = 16;
 
+// '#rrggbb' -> 0xrrggbb without pulling in Phaser. Phaser is a module
+// dependency, not a global under Vite ES modules, so referring to it
+// here without an import would throw at runtime.
+function hexToInt(hex) {
+  return parseInt(String(hex).replace(/^#/, ''), 16) || 0xffffff;
+}
+
 export function pixelText(scene, x, y, str, opts = {}) {
   const size = opts.size ?? FONT_SIZE;
   const color = opts.color ?? '#ffffff';
   const origin = opts.origin; // e.g. [0.5, 0.5]
 
   const t = scene.add.bitmapText(x, y, FONT_KEY, str, size);
-  t.setTint(Phaser.Display.Color.HexStringToColor(color).color);
+  // setTintFill replaces the texture RGB entirely; setTint multiplies
+  // with it. With black glyphs in the .fnt PNG, setTint cannot make
+  // them visible. setTintFill can. Still respects alpha.
+  t.setTintFill(hexToInt(color));
   if (origin) t.setOrigin(origin[0], origin[1]);
   return t;
 }

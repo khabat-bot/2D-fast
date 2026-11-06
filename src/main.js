@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import { GAME_CONFIG } from './config/gameConfig.js';
 import { BootScene } from './scenes/BootScene.js';
+import { GameScene } from './scenes/GameScene.js';
+import { SettingsScene } from './scenes/SettingsScene.js';
 import { initDebugOverlay } from './utils/debug.js';
 
 const config = {
@@ -30,7 +32,7 @@ const config = {
     activePointers: 4
   },
 
-  scene: [BootScene]
+  scene: [BootScene, GameScene, SettingsScene]
 };
 
 const game = new Phaser.Game(config);

@@ -22,6 +22,7 @@ project-root/
 │   ├── images/               # Pixel art PNGs and atlases (16x16 tile grid)
 │   ├── rooms/                # Tiled JSON room templates and tilesets
 │   ├── audio/                # Music and sound effects
+│   ├── fonts/                # Bitmap fonts (BMFont .fnt + .png pairs)
 │   └── ui/                   # Buttons, HUD graphics
 └── src/
     ├── main.js               # Phaser game config and boot
