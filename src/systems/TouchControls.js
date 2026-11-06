@@ -69,12 +69,14 @@ export class TouchControls {
     this.activePointerId = null;
     this.baseX = 0;
     this.baseY = 0;
+    // HUD elements - locked to screen so the joystick stays under the
+    // finger even as the camera pans.
     this.baseCircle = this.scene.add
       .circle(0, 0, this.radius, 0xffffff, 0.12)
-      .setDepth(CONTROL_DEPTH).setVisible(false);
+      .setDepth(CONTROL_DEPTH).setVisible(false).setScrollFactor(0);
     this.stickCircle = this.scene.add
       .circle(0, 0, this.stickRadius, 0xffffff, 0.35)
-      .setDepth(CONTROL_DEPTH + 1).setVisible(false);
+      .setDepth(CONTROL_DEPTH + 1).setVisible(false).setScrollFactor(0);
   }
 
   handleJoystickDown(pointer) {

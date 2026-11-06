@@ -41,7 +41,7 @@ Mobile (iOS) first. Tick items when done: `- [x]`.
 - [ ] Dash ability in code, only active when the Dash accessory is equipped (not available on a fresh run)
 - [ ] Dash behavior like Terraria: dashes in the facing direction, small cooldown, invincible while dashing
 - [ ] Dash button on touch controls (shown only when the accessory is equipped)
-- [ ] Camera follow with look-ahead
+- [x] Camera follow with look-ahead
 - [ ] Tune feel on the real iPhone
 
 ## 3. World: procedural rooms (roguelike)

@@ -5,7 +5,7 @@ import { WeaponSystem } from '../systems/WeaponSystem.js';
 import { Player } from '../entities/Player.js';
 import {
   WeaponPickup, AmmoPickup,
-  WEAPON_PICKUP_SIZE, AMMO_PICKUP_SIZE
+  WEAPON_PICKUP_SIZE
 } from '../entities/Pickup.js';
 import { Button } from '../ui/Button.js';
 import { loadSetting } from '../systems/SettingsStore.js';
@@ -26,6 +26,10 @@ import {
 } from '../config/controlsConfig.js';
 import { PLAYER_W, PLAYER_H } from '../config/playerConfig.js';
 import { PICKUP_COLLECT_DISTANCE, PICKUP_PHYSICS } from '../config/pickupConfig.js';
+import {
+  CAMERA_LERP, CAMERA_DEADZONE_W, CAMERA_DEADZONE_H,
+  CAMERA_LOOKAHEAD, CAMERA_LOOKAHEAD_LERP
+} from '../config/cameraConfig.js';
 
 const AIM_LINE_LENGTH   = 40;
 const AIM_COLOR         = 0xffeb3b;
@@ -107,9 +111,6 @@ export class GameScene extends Phaser.Scene {
     // Load the room. Single room for now; multi-room comes later.
     this.room = new RoomLoader(this, ROOMS.test_room);
     this.roomFloorY = this.room.getFloorY();
-    const weaponRestY = this.roomFloorY - WEAPON_PICKUP_SIZE / 2;
-    const ammoRestY   = this.roomFloorY - AMMO_PICKUP_SIZE / 2;
-
     const spawn = this.room.getPlayerSpawn();
     this.player = new Player(this, {
       x: spawn.x,
@@ -117,6 +118,7 @@ export class GameScene extends Phaser.Scene {
       room: this.room
     });
     this.prevJumpHeld = false;
+    this.setupCamera();
     this.createHpBar();
 
     this.enemies = [];
@@ -127,9 +129,15 @@ export class GameScene extends Phaser.Scene {
 
     this.weaponPickups = [];
     this.ammoPickups = [];
-    this.weaponPickups.push(new WeaponPickup(this, 145, weaponRestY, 'shotgun'));
-    this.ammoPickups.push(new AmmoPickup(this, 230, ammoRestY));
-    this.weaponPickups.push(new WeaponPickup(this, 300, weaponRestY, 'sniper'));
+    for (const ps of this.room.getPickupSpawns()) {
+      if (ps.type === 'weapon') {
+        this.weaponPickups.push(
+          new WeaponPickup(this, ps.x, ps.y, ps.weaponId)
+        );
+      } else if (ps.type === 'ammo') {
+        this.ammoPickups.push(new AmmoPickup(this, ps.x, ps.y));
+      }
+    }
 
     this.controls = new TouchControls(this, {
       mode: loadSetting('movementMode'),
@@ -194,12 +202,16 @@ export class GameScene extends Phaser.Scene {
     this.input.on('pointerup', releaseDrop);
     this.input.on('pointerupoutside', releaseDrop);
 
-    this.aimLine = this.add.graphics().setDepth(50);
+    // Aim line drawn in SCREEN space so it lines up with the aim-finger
+    // visuals (which are scrollFactor 0). World-to-screen conversion is
+    // done in update() below.
+    this.aimLine = this.add.graphics().setDepth(50).setScrollFactor(0);
 
     // Hint fades out after a few seconds - it is onboarding, not permanent.
     this.hintText = pixelText(this, width / 2, height - 14,
       'TAP pickups  J:jump  D:drop',
-      { size: 16, color: '#666666', origin: [0.5, 0.5] });
+      { size: 16, color: '#666666', origin: [0.5, 0.5] })
+      .setScrollFactor(0);
     this.tweens.add({
       targets: this.hintText,
       alpha: 0,
@@ -305,17 +317,21 @@ export class GameScene extends Phaser.Scene {
     this.slotUI = [];
     for (let i = 0; i < this.weapon.maxSlots; i++) {
       const x = startX + i * (slotW + gap);
+      // HUD - all slot elements locked to screen.
       const bg = this.add.rectangle(x, y, slotW, slotH, 0x222222, 0.9)
         .setDepth(900)
         .setStrokeStyle(1, 0x555555, 1)
+        .setScrollFactor(0)
         .setInteractive();
       const swatch = this.add.rectangle(
         x - slotW / 2 + 6, y, 6, slotH - 4, 0x444444, 1
-      ).setDepth(901);
+      ).setDepth(901).setScrollFactor(0);
       const nameLbl = pixelText(this, x - slotW / 2 + 12, y - 7, '',
-        { size: 16, color: '#ffffff', origin: [0, 0.5] }).setDepth(901);
+        { size: 16, color: '#ffffff', origin: [0, 0.5] })
+        .setDepth(901).setScrollFactor(0);
       const ammoLbl = pixelText(this, x + slotW / 2 - 4, y + 7, '',
-        { size: 16, color: '#cccccc', origin: [1, 0.5] }).setDepth(901);
+        { size: 16, color: '#cccccc', origin: [1, 0.5] })
+        .setDepth(901).setScrollFactor(0);
       const slotIndex = i;
       bg.on('pointerdown', () => {
         this.weapon.selectIndex(slotIndex);
@@ -437,7 +453,14 @@ export class GameScene extends Phaser.Scene {
       p.setInRange(gap <= PICKUP_COLLECT_DISTANCE && rangedHasRoom, time);
     }
 
-    const aim = this.aim.getAim(px, py);
+    // Aim math in SCREEN space. AimController stores fingerX/Y as
+    // pointer.x/y (screen). Passing world player coords would mix spaces.
+    // Directions are preserved in both spaces, so muzzle/movement use
+    // world coords safely - only the aim line rendering needs screen.
+    const cam = this.cameras.main;
+    const pxs = px - cam.scrollX;
+    const pys = py - cam.scrollY;
+    const aim = this.aim.getAim(pxs, pys);
     const fire = this.aim.consumeFire();
     if (fire) this.lastFireAtMs = time;
 
@@ -447,6 +470,16 @@ export class GameScene extends Phaser.Scene {
     } else if (Math.abs(this.controls.outputX) > FACING_MOVE_THRESHOLD) {
       this.facing = this.controls.outputX > 0 ? 1 : -1;
     }
+
+    // Camera look-ahead: shift follow target in facing direction while
+    // the player is moving. Lerped so direction changes pan smoothly.
+    const moving = Math.abs(this.controls.outputX) > FACING_MOVE_THRESHOLD;
+    const targetLookahead = moving ? this.facing * CAMERA_LOOKAHEAD : 0;
+    this.cameraLookaheadX = Phaser.Math.Linear(
+      this.cameraLookaheadX, targetLookahead,
+      Math.min(1, dt * CAMERA_LOOKAHEAD_LERP)
+    );
+    this.cameras.main.setFollowOffset(this.cameraLookaheadX, 0);
 
     const mx = px + aim.x * MUZZLE_OFFSET;
     const my = py + aim.y * MUZZLE_OFFSET;
@@ -495,18 +528,21 @@ export class GameScene extends Phaser.Scene {
     const recentlyFired = (time - this.lastFireAtMs) < AIM_BRIGHT_MS;
     const bright = fire || recentlyFired;
 
+    // Aim line drawn in SCREEN space from screen player to screen finger
+    // (or in aim direction). Both points are screen coords, so the visual
+    // matches the finger position exactly regardless of camera scroll.
     this.aimLine.clear();
     if (this.aim.mode === 'tapToShoot' && this.aim.aimPointerId !== null) {
       this.aimLine.lineStyle(1, AIM_COLOR, bright ? 0.9 : 0.5);
       this.aimLine.beginPath();
-      this.aimLine.moveTo(px, py);
+      this.aimLine.moveTo(pxs, pys);
       this.aimLine.lineTo(this.aim.fingerX, this.aim.fingerY);
       this.aimLine.strokePath();
     } else if (this.aim.hasAim) {
       this.aimLine.lineStyle(2, AIM_COLOR, bright ? 1.0 : 0.4);
       this.aimLine.beginPath();
-      this.aimLine.moveTo(px, py);
-      this.aimLine.lineTo(px + aim.x * AIM_LINE_LENGTH, py + aim.y * AIM_LINE_LENGTH);
+      this.aimLine.moveTo(pxs, pys);
+      this.aimLine.lineTo(pxs + aim.x * AIM_LINE_LENGTH, pys + aim.y * AIM_LINE_LENGTH);
       this.aimLine.strokePath();
     }
 
@@ -519,11 +555,13 @@ export class GameScene extends Phaser.Scene {
       .rectangle(HP_BAR_X, HP_BAR_Y, HP_BAR_W, HP_BAR_H, 0x000000, 0.7)
       .setOrigin(0, 0.5)
       .setDepth(HP_BAR_DEPTH)
-      .setStrokeStyle(1, 0x666666, 1);
+      .setStrokeStyle(1, 0x666666, 1)
+      .setScrollFactor(0);
     this.hpBarFill = this.add
       .rectangle(HP_BAR_X, HP_BAR_Y, HP_BAR_W, HP_BAR_H, HP_BAR_COLOR, 1)
       .setOrigin(0, 0.5)
-      .setDepth(HP_BAR_DEPTH + 1);
+      .setDepth(HP_BAR_DEPTH + 1)
+      .setScrollFactor(0);
     this.refreshHpBar();
   }
 
@@ -532,7 +570,17 @@ export class GameScene extends Phaser.Scene {
     this.hpBarFill.scaleX = frac;
   }
 
+  setupCamera() {
+    this.cameraLookaheadX = 0;
+    const cam = this.cameras.main;
+    const b = this.room.getBounds();
+    cam.setBounds(b.x, b.y, b.w, b.h);
+    cam.setDeadzone(CAMERA_DEADZONE_W, CAMERA_DEADZONE_H);
+    cam.startFollow(this.player.sprite, true, CAMERA_LERP, CAMERA_LERP);
+  }
+
   onPlayerDeath() {
+    this.cameras.main.stopFollow();
     // Snapshot stats at the moment of death. If we read this.stats
     // inside the delayed callback the 400ms fade would inflate the
     // 'survived' time.

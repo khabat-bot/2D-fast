@@ -68,20 +68,20 @@ export class AimController {
       this.tapRing = scene.add.circle(0, 0, 12, 0xffeb3b, 0)
         .setStrokeStyle(2, 0xffeb3b, 1)
         .setDepth(CONTROL_DEPTH)
-        .setVisible(false);
+        .setVisible(false).setScrollFactor(0);
       this.tapDot = scene.add.circle(0, 0, 3, 0xffeb3b, 1)
         .setDepth(CONTROL_DEPTH + 1)
-        .setVisible(false);
+        .setVisible(false).setScrollFactor(0);
     } else {
       this.aimBaseX = 0;
       this.aimBaseY = 0;
       this.dragCurrentlyActive = false;
       this.baseCircle = scene.add
         .circle(0, 0, this.aimStickRadius, 0xffeb3b, 0.12)
-        .setDepth(CONTROL_DEPTH).setVisible(false);
+        .setDepth(CONTROL_DEPTH).setVisible(false).setScrollFactor(0);
       this.stickCircle = scene.add
         .circle(0, 0, this.aimStickStickRadius, 0xffeb3b, 0.35)
-        .setDepth(CONTROL_DEPTH + 1).setVisible(false);
+        .setDepth(CONTROL_DEPTH + 1).setVisible(false).setScrollFactor(0);
     }
 
     if (this.mode === 'aimStick') {

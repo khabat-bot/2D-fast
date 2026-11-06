@@ -27,9 +27,11 @@ export class Button {
     this.pressedAlpha = opts.pressedAlpha ?? 0.5;
     const depth = opts.depth ?? DEFAULT_DEPTH;
 
+    // HUD element - locked to screen, unaffected by camera scroll.
     this.circle = scene.add
       .circle(this.x, this.y, this.radius, this.color, this.alpha)
-      .setDepth(depth);
+      .setDepth(depth)
+      .setScrollFactor(0);
 
     this.label = null;
     if (opts.label) {
@@ -37,7 +39,7 @@ export class Button {
         size: 16,
         color: opts.labelColor ?? '#ffffff',
         origin: [0.5, 0.5]
-      }).setDepth(depth + 1);
+      }).setDepth(depth + 1).setScrollFactor(0);
     }
   }
 

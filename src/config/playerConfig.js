@@ -37,7 +37,7 @@ export const AIR_FRICTION_MULT  = 1.0;
 
 // I-frame visual feel
 export const IFRAME_ALPHA_LOW   = 0.4;   // alpha during flicker
-export const IFRAME_FLICKER_MS  = 100;   // ms per flicker phase
+export const IFRAME_FLICKER_MS  = 300;   // ms per flicker phase
 
 // Safety-net slack for the Y clamp: how far outside the room bounds
 // the player can be before being snapped back. 32 = one player height.
@@ -45,7 +45,7 @@ export const Y_BOUNDS_SLACK     = 32;
 
 // Wall interaction (added with rooms).
 export const WALL_SLIDE_SPEED = 80;    // px/s max fall speed while on wall
-export const WALL_JUMP_VX     = 260;   // px/s away from wall
+export const WALL_JUMP_VX     = 220;   // px/s away from wall
 export const WALL_JUMP_VY     = -320;  // px/s up
 export const WALL_JUMP_LOCK   = 0.15;  // seconds input is ignored after wall jump
 

@@ -108,6 +108,19 @@ export class RoomLoader {
     }));
   }
 
+  // Pickup spawns in world coords. Each entry has {type, weaponId?,
+  // x, y}. The caller (GameScene) instantiates WeaponPickup or
+  // AmmoPickup based on `type`. Pickup positions were previously
+  // hardcoded in GameScene, which did not scale to multiple rooms.
+  getPickupSpawns() {
+    return (this.data.pickupSpawns ?? []).map((s) => ({
+      type: s.type,
+      weaponId: s.weaponId,
+      x: this.offsetX + s.x,
+      y: this.offsetY + s.y
+    }));
+  }
+
   // Left/right bounds for walker patrol. Walker update checks
   // sprite.x - halfW < minX, so these are edge positions (inside the outer
   // walls by one tile).

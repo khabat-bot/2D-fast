@@ -5,44 +5,52 @@
 //   '='  one-way platform (only collides from above while falling)
 //   '.'  empty
 //
-// Coordinates below are in room-local pixels (tile cols/rows * tileSize),
-// measured from the top-left tile. The loader adds the room offset.
+// Coordinates are room-local pixels from the top-left tile. The loader adds
+// the room offset, so playerSpawn / walkerSpawns / pickupSpawns are all
+// relative to the room's own origin.
 //
-// playerSpawn is the FEET position (player sprite bottom). The loader
-// returns this as-is; the caller converts to sprite-center Y.
-//
-// walkerSpawns are sprite centers. Walkers do not do tile collision yet
-// (their patrol logic has not been updated), so their positions must be on
-// the floor manually - which is fine for a hand-authored test room.
-//
-// The Tiled JSON import path in PROJECT_STRUCTURE.md ("assets/rooms/"
-// Tiled JSON room templates") is a later step. Hand-authored JS keeps the
-// room templates in data/, which is where all game data lives per AGENT.md.
+// test_room: 40x16 tiles = 640x256. Bigger than the 390x180 viewport so the
+// camera has range both horizontally (250px pan) and vertically (76px pan).
+// Platform layout gives the player vertical exploration to test the camera.
 export const ROOMS = {
   test_room: {
     id: 'test_room',
-    tilesWide: 24,
-    tilesTall: 11,
+    tilesWide: 40,
+    tilesTall: 16,
     tileSize: 16,
     grid: [
-      '########################',
-      '#......................#',
-      '#......................#',
-      '#....===........===....#',
-      '#......................#',
-      '#..........===.........#',
-      '#......................#',
-      '#...........=..........#',
-      '#......................#',
-      '#......................#',
-      '########################'
+      '########################################',
+      '#......................................#',
+      '#......................................#',
+      '#......................................#',
+      '#.........===..............===.........#',
+      '#......................................#',
+      '#......................................#',
+      '#..............===........===..........#',
+      '#......................................#',
+      '#......................................#',
+      '#......................................#',
+      '#...................===................#',
+      '#......................................#',
+      '#......................................#',
+      '#......................................#',
+      '########################################'
     ],
-    // Feet position, room-local pixels. Floor row 10 top = 160.
-    playerSpawn: { x: 40, y: 160 },
-    // Sprite centers. Bottom of walker touches floor (160).
+    // Room-local feet position. Floor top = row 15 * 16 = 240.
+    playerSpawn: { x: 40, y: 240 },
+    // Sprite centers. Walker height 20, floor top 240 -> center 230.
     walkerSpawns: [
-      { x: 120, y: 150 },
-      { x: 280, y: 150 }
+      { x: 150, y: 230 },
+      { x: 350, y: 230 },
+      { x: 500, y: 230 }
+    ],
+    // Pickup world positions, room-local. Sprite centers:
+    //   weapon 14x14 -> floor top - 7
+    //   ammo   12x12 -> floor top - 6
+    pickupSpawns: [
+      { type: 'weapon', weaponId: 'shotgun', x: 200, y: 233 },
+      { type: 'ammo',                       x: 350, y: 234 },
+      { type: 'weapon', weaponId: 'sniper',  x: 520, y: 233 }
     ]
   }
 };
