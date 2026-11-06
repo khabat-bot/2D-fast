@@ -3,15 +3,15 @@
 Mobile (iOS) first. Tick items when done: `- [x]`.
 
 ## 0. Project setup
-- [ ] Create Vite + Phaser 3 project
-- [ ] Phaser config: landscape, scale mode FIT, pixel-art settings, multi-touch pointers
-- [ ] index.html: viewport meta, disable zoom/scroll/pull-to-refresh, safe areas
-- [ ] Dev server reachable from iPhone over local Wi-Fi
-- [ ] Portrait "rotate your phone" overlay
+- [x] Create Vite + Phaser 3 project
+- [x] Phaser config: landscape, scale mode FIT, pixel-art settings, multi-touch pointers
+- [x] index.html: viewport meta, disable zoom/scroll/pull-to-refresh, safe areas
+- [x] Dev server reachable from iPhone over local Wi-Fi
+- [x] Portrait "rotate your phone" overlay
 - [ ] Handle app background and return (`visibilitychange`), reconnect if the connection dropped
-- [ ] Debug overlay (FPS counter, toggle)
-- [ ] Add-to-Home-Screen support (manifest + iOS meta tags)
-- [ ] Placeholder rendering: anything without art (players, enemies, projectiles, pickups, solid tiles) is drawn as a solid-color rectangle matching its hitbox
+- [x] Debug overlay (FPS counter, toggle)
+- [x] Add-to-Home-Screen support (manifest + iOS meta tags)
+- [x] Placeholder rendering: anything without art (players, enemies, projectiles, pickups, solid tiles) is drawn as a solid-color rectangle matching its hitbox
 - [ ] Touch controls and HUD drawn with simple shapes when there is no UI art
 - [ ] Optional `color` field on data entries, with a default color per category
 - [ ] Art files are picked up automatically when added (no code change); missing files fall back to the placeholder
@@ -114,7 +114,7 @@ Mobile (iOS) first. Tick items when done: `- [x]`.
 - [ ] Music
 - [ ] Particle effects (capped)
 - [ ] Haptics where iOS allows it
-- [ ] Pixel art pipeline: PNG files, 16x16 tile grid for rooms, Aseprite atlas (PNG + JSON) loading
+- [x] Pixel art pipeline: PNG files, 16x16 tile grid for rooms, Aseprite atlas (PNG + JSON) loading
 - [ ] Player and enemy sprites are not 16x16: hitboxes set separately from sprite size
 - [ ] Decide the internal game resolution and use integer scaling
 - [ ] Check on the iPhone that art is sharp (no blur, no tile seams)

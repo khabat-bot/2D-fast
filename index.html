@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>2D Fast</title>
+
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="apple-mobile-web-app-title" content="2D Fast" />
+
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/icons/icon-180.png" />
+  <link rel="icon" type="image/png" href="/favicon.png" />
+
+  <style>
+    :root {
+      --safe-top:    env(safe-area-inset-top, 0px);
+      --safe-right:  env(safe-area-inset-right, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left:   env(safe-area-inset-left, 0px);
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+    }
+
+    /* fixed + inset avoids the iOS Safari rubber-band scroll entirely */
+    body { position: fixed; inset: 0; }
+
+    #game { position: absolute; inset: 0; }
+    #game canvas {
+      display: block;
+      /* Nearest-neighbor upscale instead of bilinear. Rectangles get
+         slightly chunkier seams, but text stays readable across the
+         non-integer Scale.FIT upscale. crisp-edges is the Firefox
+         fallback; pixelated wins where supported (iOS Safari 13+). */
+      image-rendering: crisp-edges;
+      image-rendering: pixelated;
+    }
+
+    /* --- rotate overlay: shown only in portrait --- */
+    #rotate-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      z-index: 1000;
+      background: #000;
+      color: #fff;
+      font-family: monospace;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 14px;
+      text-align: center;
+      padding: calc(24px + var(--safe-top)) calc(24px + var(--safe-right))
+               calc(24px + var(--safe-bottom)) calc(24px + var(--safe-left));
+      box-sizing: border-box;
+      /* Same fix for the portrait overlay text. */
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+    #rotate-overlay .icon { font-size: 56px; line-height: 1; }
+    #rotate-overlay .msg  { font-size: 18px; letter-spacing: 1px; }
+    #rotate-overlay .sub  { font-size: 12px; color: #888; }
+    @media (orientation: portrait) {
+      #rotate-overlay { display: flex; }
+    }
+
+    /* --- debug chips --- */
+    #debug-version {
+      position: fixed;
+      bottom: calc(4px + var(--safe-bottom));
+      right:  calc(6px + var(--safe-right));
+      font-family: monospace;
+      font-size: 10px;
+      color: rgba(255,255,255,0.33);
+      padding: 4px 6px;
+      z-index: 10;
+      /* Explicit on the chip: iOS Safari ignores ancestor
+         touch-action for double-tap-to-zoom on text. */
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #debug-fps {
+      display: none;
+      position: fixed;
+      top:    calc(6px + var(--safe-top));
+      right:  calc(6px + var(--safe-right));
+      font-family: monospace;
+      font-size: 14px;
+      color: #00ff88;
+      background: rgba(0,0,0,0.6);
+      padding: 4px 8px;
+      border-radius: 3px;
+      z-index: 11;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="game"></div>
+
+  <div id="rotate-overlay">
+    <div class="icon">↻</div>
+    <div class="msg">Rotate your phone</div>
+    <div class="sub">Landscape mode</div>
+  </div>
+
+  <div id="debug-version">v0.0.1</div>
+  <div id="debug-fps"></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

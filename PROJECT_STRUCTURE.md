@@ -7,6 +7,7 @@ project-root/
 ├── AGENT.md                  # Rules for AI agents
 ├── TODO.md                   # Task list
 ├── PROJECT_STRUCTURE.md      # This file
+├── .gitignore                # node_modules, dist, OS files
 ├── package.json
 ├── vite.config.js            # Dev server exposed on the local network
 ├── index.html                # Viewport meta, iOS meta tags, canvas mount
