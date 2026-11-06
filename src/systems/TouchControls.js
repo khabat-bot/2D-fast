@@ -75,8 +75,9 @@ export class TouchControls {
 
   handleJoystickDown(pointer) {
     if (this.activePointerId !== null) return;
-    // Spawn only in the bottom-left quadrant. The top-left quadrant
-    // is reserved for future buttons (jump, fire, map, etc).
+    // Spawn only in the bottom-left 1/3 x 1/3 of the screen. The rest
+    // of the screen (including the top-left) is available for aim and
+    // future buttons.
     const w = this.scene.scale.width;
     const h = this.scene.scale.height;
     if (pointer.x >= w * this.joystickZoneWidthFrac) return;
@@ -190,7 +191,22 @@ export class TouchControls {
   // pointer has already been claimed by a fixed button before it tries
   // to use it. Add new fixed buttons here.
   isPointerClaimed(pointer) {
-    return pointer.id === this.jumpPointerId;
+    // Jump button claims its pointer in every mode.
+    if (pointer.id === this.jumpPointerId) return true;
+    // In joystick mode, the entire spawn zone is reserved even before
+    // the joystick starts. A tap there is for the joystick, not for aim.
+    if (this.mode === 'joystick') {
+      const w = this.scene.scale.width;
+      const h = this.scene.scale.height;
+      if (pointer.x < w * this.joystickZoneWidthFrac &&
+          pointer.y > h * this.joystickZoneYStartFrac) return true;
+    } else if (this.mode === 'buttons') {
+      // In buttons mode, the L and R circles are claimed. Taps in the
+      // gap between them are NOT claimed and can be used for aim.
+      if (this.buttonLeft.contains(pointer)) return true;
+      if (this.buttonRight.contains(pointer)) return true;
+    }
+    return false;
   }
 
   // --- dispatch -----------------------------------------------------------

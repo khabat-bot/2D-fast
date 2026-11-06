@@ -27,10 +27,9 @@ export const FIRE_BUTTON_RADIUS        = 24;
 export const FIRE_BUTTON_X_FROM_RIGHT  = 50;
 export const FIRE_BUTTON_Y_FROM_BOTTOM = 105;
 
-// Joystick spawn zone (mode 1 only). Fraction of screen width/height.
-// The joystick spawns only when the touch falls inside the bottom-left
-// quadrant (25% of screen area). This frees the top-left quadrant for
-// future buttons (jump, fire, map, etc). Values are fractions of the
-// canvas, not pixels.
-export const JOYSTICK_ZONE_WIDTH_FRAC     = 0.5;  // x < width * this
-export const JOYSTICK_ZONE_Y_START_FRAC   = 0.5;  // y > height * this
+// Joystick spawn zone (mode 1 only). The joystick spawns only when
+// the touch falls inside the bottom-left 1/3 x 1/3 of the screen
+// (about 11% of screen area). Frees the top-left and the right side
+// for other controls (aim taps, future buttons).
+export const JOYSTICK_ZONE_WIDTH_FRAC     = 1 / 3;
+export const JOYSTICK_ZONE_Y_START_FRAC   = 1 / 1.5;

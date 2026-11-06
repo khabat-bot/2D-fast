@@ -121,8 +121,11 @@ export class AimController {
       return;
     }
 
-    // Aim interaction is right-half only. Left half belongs to movement.
-    if (pointer.x < this.scene.scale.width / 2) return;
+    // Modes 1 and 2 restrict aim to the right half (aim stick). Mode 3
+    // (tapToShoot) does not restrict by screen half - it accepts anywhere
+    // that is not claimed by TouchControls (jump button, joystick zone,
+    // L/R buttons). That is the whole point of 'aim at my finger'.
+    if (this.mode !== 'tapToShoot' && pointer.x < this.scene.scale.width / 2) return;
     if (this.aimPointerId !== null) return;
     this.aimPointerId = pointer.id;
 
